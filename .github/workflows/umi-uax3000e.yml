@@ -88,6 +88,13 @@ jobs:
     - name: Update feeds
       run: cd openwrt && ./scripts/feeds update -a
 
+    - name: Install Priority Feeds (iStore/NAS)
+      run: |
+        cd openwrt
+        ./scripts/feeds install -a -p nas
+        ./scripts/feeds install -a -p nas_luci
+        ./scripts/feeds install -a -p istore
+
     - name: Install feeds
       run: cd openwrt && ./scripts/feeds install -a
 
