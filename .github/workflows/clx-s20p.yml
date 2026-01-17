@@ -12,6 +12,7 @@ name: mt7986-clx-s20p
 
 env:
   REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
+  #REPO_URL: https://github.com/dailook/immortalwrt-mt798x-6.6
   #REPO_URL: https://github.com/sagehou/immortalwrt-mt798x-6.6
   REPO_BRANCH: openwrt-24.10-6.6
   FEEDS_CONF: feeds.conf.default
