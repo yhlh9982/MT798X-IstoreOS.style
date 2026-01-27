@@ -27,7 +27,7 @@ echo 'src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-pass
 echo 'src-git authshield https://github.com/iv7777/luci-app-authshield.git;main' >> feeds.conf.default
 
 # 主题
-# git clone --depth=1 -b openwrt-25.12 https://github.com/sbwml/luci-theme-argon.git package/argon
+# git clone --depth=1 -b openwrt-24.10 https://github.com/sbwml/luci-theme-argon.git package/argon
 git clone --depth=1 https://github.com/eamonxg/luci-theme-aurora.git package/luci-theme-aurora
 git clone --depth=1 https://github.com/eamonxg/luci-app-aurora-config.git package/luci-app-aurora-config
 git clone --depth=1 https://github.com/sirpdboy/luci-theme-kucat.git package/luci-theme-kucat
