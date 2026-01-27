@@ -20,6 +20,16 @@ if [ -f "$RUST_FILE" ]; then
 	cd $PKG_PATH && echo "rust has been fixed!"
 fi
 
+#修复DiskMan编译失败
+DM_FILE="./luci-app-diskman/applications/luci-app-diskman/Makefile"
+if [ -f "$DM_FILE" ]; then
+	echo " "
+
+	sed -i '/ntfs-3g-utils /d' $DM_FILE
+
+	cd $PKG_PATH && echo "diskman has been fixed!"
+fi
+
 # 修复 libxcrypt 编译报错
 # 给 configure 脚本添加 --disable-werror 参数，忽略警告
 sed -i 's/CONFIGURE_ARGS +=/CONFIGURE_ARGS += --disable-werror/' feeds/packages/libs/libxcrypt/Makefile
