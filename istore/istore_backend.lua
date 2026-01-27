@@ -1,4 +1,4 @@
-# 修复quickstart温度显示 引用于：https://gist.github.com/puteulanus/1c180fae6bccd25e57eb6d30b7aa28aa#file-istore_backend-lua
+# 使用 istoreos 风格主页时 quickstart 修复 CPU 温度显示 引用于：https://gist.github.com/puteulanus/1c180fae6bccd25e57eb6d30b7aa28aa#file-istore_backend-lua
 -- Copyright 2022 xiaobao <xiaobao@linkease.com>
 -- Licensed to the public under the MIT License
 
