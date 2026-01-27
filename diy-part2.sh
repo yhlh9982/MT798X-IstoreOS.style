@@ -10,6 +10,16 @@
 # See /LICENSE for more information.
 #
 
+#修复Rust编译失败
+RUST_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/rust/Makefile")
+if [ -f "$RUST_FILE" ]; then
+	echo " "
+
+	sed -i 's/ci-llvm=true/ci-llvm=false/g' $RUST_FILE
+
+	cd $PKG_PATH && echo "rust has been fixed!"
+fi
+
 # 修复 libxcrypt 编译报错
 # 给 configure 脚本添加 --disable-werror 参数，忽略警告
 sed -i 's/CONFIGURE_ARGS +=/CONFIGURE_ARGS += --disable-werror/' feeds/packages/libs/libxcrypt/Makefile
