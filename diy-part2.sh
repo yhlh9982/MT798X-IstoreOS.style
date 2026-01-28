@@ -34,11 +34,16 @@ echo "Rust has been replaced with a stable version!"
 # =========================================================
 # 修复 QuickStart 首页温度显示问题 (方案：修改源码)
 # =========================================================
-# 定义源文件路径 (仓库根目录下的 istore/istore_backend.lua)
-CUSTOM_LUA="../istore/istore_backend.lua"
 
-# 查找 feeds 目录下的目标文件 (通常在 feeds/nas_luci/... 或 feeds/istore/...)
-# 使用 find 确保无论路径怎么变都能找到
+# 1. 智能获取自定义文件的绝对路径
+# $0 代表当前脚本本身，dirname 获取脚本所在目录(即仓库根目录)
+REPO_ROOT=$(dirname "$(readlink -f "$0")")
+CUSTOM_LUA="$REPO_ROOT/istore/istore_backend.lua"
+
+echo "Debug: Repo root is $REPO_ROOT"
+echo "Debug: Looking for custom file at $CUSTOM_LUA"
+
+# 2. 在 feeds 目录中查找目标文件
 TARGET_LUA=$(find feeds -name "istore_backend.lua" -type f)
 
 if [ -n "$TARGET_LUA" ]; then
@@ -46,9 +51,17 @@ if [ -n "$TARGET_LUA" ]; then
     if [ -f "$CUSTOM_LUA" ]; then
         echo "Overwriting with custom file..."
         cp -f "$CUSTOM_LUA" "$TARGET_LUA"
-        echo "Overwrite Success!"
+        
+        # 再次检查是否覆盖成功
+        if cmp -s "$CUSTOM_LUA" "$TARGET_LUA"; then
+             echo "✅ Overwrite Success! Files match."
+        else
+             echo "❌ Error: Copy failed or files do not match."
+        fi
     else
-        echo "❌ Error: Custom file ($CUSTOM_LUA) not found in repo!"
+        echo "❌ Error: Custom file ($CUSTOM_LUA) not found!"
+        # 列出仓库根目录看看有什么，方便排错
+        ls -l "$REPO_ROOT"
     fi
 else
     echo "❌ Error: Target istore_backend.lua not found in feeds!"
