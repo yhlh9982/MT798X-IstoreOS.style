@@ -11,22 +11,25 @@
 #
 
 # =========================================================
-# 修复 Rust 编译失败
+# 修复 Rust 编译失败：替换为 ImmortalWrt 23.05 的稳定版 Rust 
 # =========================================================
 
-echo "Forcing local compilation for Rust..."
+# 1. 删除当前源码中有问题/下载失败的 Rust
+echo "Removing broken Rust package..."
+rm -rf feeds/packages/lang/rust
 
-# 找到 Rust 的 Makefile
-RUST_MAKEFILE="feeds/packages/lang/rust/Makefile"
+# 2. 克隆 ImmortalWrt 23.05 分支的 packages
+# 这个分支的 Rust 版本是 1.85.0 (稳定版)，下载源永久有效
+echo "Cloning stable Rust from ImmortalWrt..."
+git clone --depth 1 -b openwrt-23.05 https://github.com/immortalwrt/packages.git temp_packages
 
-if [ -f "$RUST_MAKEFILE" ]; then
-    # 将 download-ci-llvm = true 改为 false
-    # 这样编译脚本就不会去下载那个不存在的文件，而是直接开始编译 LLVM
-    sed -i 's/download-ci-llvm = true/download-ci-llvm = false/g' "$RUST_MAKEFILE"
-    echo "Rust: CI download disabled. Local build enforced."
-else
-    echo "WARNING: Rust Makefile not found!"
-fi
+# 3. 偷梁换柱：把稳定的 Rust 搬进来
+cp -r temp_packages/lang/rust feeds/packages/lang/
+
+# 4. 清理现场
+rm -rf temp_packages
+
+echo "Rust has been replaced with stable version 1.85.0!"
 
 # =========================================================
 # 修复 QuickStart 首页温度显示问题 (方案：修改源码)
