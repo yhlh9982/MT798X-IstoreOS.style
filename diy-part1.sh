@@ -10,7 +10,6 @@
 # See /LICENSE for more information.
 #
 
-echo >> feeds.conf.default
 # istore
 echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
 echo 'src-git nas https://github.com/linkease/nas-packages.git;master' >> feeds.conf.default
