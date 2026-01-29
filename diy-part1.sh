@@ -11,36 +11,18 @@
 #
 
 # istore
-echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
-echo 'src-git nas https://github.com/linkease/nas-packages.git;master' >> feeds.conf.default
-echo 'src-git nas_luci https://github.com/linkease/nas-packages-luci.git;main' >> feeds.conf.default
+git clone --depth=1 https://github.com/linkease/istore package/istore
+git clone --depth=1 https://github.com/linkease/nas-packages package/nas
+git clone --depth=1 https://github.com/linkease/nas-packages-luci package/nas-luci
 
-# 科学插件
-# 1️⃣ 先清理可能已存在的 feed（去重）
-sed -i \
-  -e '/linkease\/istore/d' \
-  -e '/nas-packages/d' \
-  -e '/openwrt-passwall/d' \
-  -e '/openwrt-passwall2/d' \
-  -e '/openwrt-passwall-packages/d' \
-  -e '/vernesong\/OpenClash/d' \
-  -e '/OpenWrt-nikki/d' \
-  -e '/OpenWrt-momo/d' \
-  -e '/^src-git[[:space:]]\+daed[[:space:]]/d' \
-  -e '/fw876\/helloworld/d' \
-  feeds.conf.default
-
-cat >> feeds.conf.default << 'EOF'
-src-git passwall https://github.com/Openwrt-Passwall/openwrt-passwall.git;main
-src-git passwall2 https://github.com/Openwrt-Passwall/openwrt-passwall2.git;main
-src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main
-src-git OpenClash https://github.com/vernesong/OpenClash.git;master
-src-git nikki https://github.com/nikkinikki-org/OpenWrt-nikki.git;main
-src-git momo https://github.com/nikkinikki-org/OpenWrt-momo.git;main
-src-git daed https://github.com/QiuSimons/luci-app-daed.git;master
-src-git helloworld https://github.com/fw876/helloworld.git;master
-EOF
-
+git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall package/passwall
+git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall2 package/passwall2
+git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages package/passwall-packages
+git clone --depth=1 -b master https://github.com/vernesong/OpenClash package/OpenClash
+git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki package/nikki
+git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo package/OpenWrt-momo
+git clone --depth=1 -b master https://github.com/QiuSimons/luci-app-daed package/daed
+git clone --depth=1 -b master https://github.com/fw876/helloworld package/helloworld
 
 # 插件添加
 git clone --depth=1 https://github.com/sirpdboy/luci-app-watchdog package/watchdog
