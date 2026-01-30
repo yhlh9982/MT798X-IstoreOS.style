@@ -7,29 +7,17 @@
 name: istore-clx-s20p
 
 env:
-  # 设备名称，用于生成发布标签
   DEVICE_NAME: istore-clx-s20p
-  # 源码仓库地址
-  #REPO_URL: https://github.com/dailook/immortalwrt-mt798x-6.6 
   REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6 
-  # 源码分支
   REPO_BRANCH: openwrt-24.10-6.6
-  # Feeds 配置文件名
   FEEDS_CONF: feeds.conf.default
-  # .config 配置文件名
   CONFIG_FILE: istore-clx-s20p.config
-  # 自定义脚本 1 (在更新 feeds 之前运行)
   DIY_P1_SH: diy-part1.sh
-  # 自定义脚本 2 (在更新 feeds 之后运行)
   DIY_P2_SH: diy-part2.sh
-  # 上传 bin 目录 (包含所有 ipk)
   UPLOAD_BIN_DIR: true
-  # 上传固件目录 (包含 img/bin)
   UPLOAD_FIRMWARE: true
-  # 上传到第三方网盘
   UPLOAD_COWTRANSFER: false
   UPLOAD_WETRANSFER: false
-  # 发布到 GitHub Releases
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
 
@@ -41,8 +29,6 @@ on:
         description: 'SSH connection to Actions'
         required: false
         default: 'false'
-#  schedule:
-#    - cron: 0 8 */5 * *
 
 jobs:
   build:
@@ -50,10 +36,8 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@main
+      uses: actions/checkout@v4
 
-    # 1. 清理磁盘空间
-    # 使用 jlumbroso 插件删除预装的大型软件(Android/Dotnet等)
     - name: Free Disk Space (清理磁盘空间)
       uses: jlumbroso/free-disk-space@main
       with:
@@ -63,11 +47,8 @@ jobs:
         haskell: true
         large-packages: true
         docker-images: true
-        # ❗保留 Swap 分区，防止编译内存不足导致失败
         swap-storage: true
         
-    # 2. 初始化编译环境
-    # 使用 ImmortalWrt 官方脚本，自动安装 gcc/python/go/rust 等依赖
     - name: Initialization Environment （初始化编译环境）
       env:
         DEBIAN_FRONTEND: noninteractive
@@ -83,9 +64,8 @@ jobs:
         sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh )'
         
         sudo mkdir -p /workdir
-        sudo chown $USER:$GROUPS /workdir
+        sudo chown -R runner:runner /workdir
 
-    # 3. 克隆源码
     - name: Clone source code （克隆源码）
       working-directory: /workdir
       run: |
@@ -93,7 +73,6 @@ jobs:
         git clone $REPO_URL -b $REPO_BRANCH --single-branch openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    # 4. 加载自定义 Feeds (diy-part1.sh)
     - name: Load custom feeds （加载自定义 Feeds）
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
@@ -101,15 +80,12 @@ jobs:
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
-    # 5. 更新并安装 Feeds (已移除 Priority Feeds 步骤)
-    # 恢复为标准的 OpenWrt 流程：更新所有 -> 安装所有
     - name: Update feeds （Feeds更新）
       run: cd openwrt && ./scripts/feeds update -a
 
     - name: Install feeds （Feeds安装）
       run: cd openwrt && ./scripts/feeds install -a
 
-    # 6. 加载自定义配置 (diy-part2.sh)
     - name: Load custom configuration （加载自定义配置diy-part2）
       run: |
         [ -e files ] && mv files openwrt/files
@@ -118,12 +94,10 @@ jobs:
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
-    # 7. SSH 调试 (可选)
     - name: SSH connection to Actions （SSH 调试）
       uses: mxschmitt/action-tmate@v3
       if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
 
-    # 8. 下载软件包 (预下载以防编译时网络中断)
     - name: Download package （下载软件包）
       id: package
       run: |
@@ -133,7 +107,6 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    # 9. 包含重试逻辑：先多核编译，失败后单核编译并输出详细日志
     - name: Compile the firmware （编译固件）
       id: compile
       run: |
@@ -147,15 +120,13 @@ jobs:
       if: (!cancelled())
       run: df -hT
 
-    # 10. 上传 bin 目录 (Artifacts)
     - name: Upload bin directory （上传 bin 目录）
-      uses: actions/upload-artifact@main
+      uses: actions/upload-artifact@v4
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
         name: OpenWrt_bin_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: openwrt/bin
 
-    # 11. 整理固件文件
     - name: Organize files （整理固件文件）
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
@@ -165,15 +136,13 @@ jobs:
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
 
-    # 12. 上传固件目录 (Artifacts)
     - name: Upload OpenWrt_firmware directory （上传固件目录）
-      uses: actions/upload-artifact@main
-      if: steps.organize.outputs.status == 'success' && !cancelled()  # ✅ 已补全条件判断
+      uses: actions/upload-artifact@v4
+      if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
         name: OpenWrt_firmware_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
 
-    # 13. 上传到 CowTransfer (可选)
     - name: Upload firmware to cowtransfer
       id: cowtransfer
       if: steps.organize.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' && !cancelled()
@@ -183,7 +152,6 @@ jobs:
         echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
         echo "url=$(cat cowtransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
 
-    # 14. 上传到 WeTransfer (可选)
     - name: Upload firmware to WeTransfer
       id: wetransfer
       if: steps.organize.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true' && !cancelled()
@@ -193,24 +161,20 @@ jobs:
         echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep https)"
         echo "url=$(cat wetransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
 
-    # 15. 生成发布标签和日志
     - name: Generate release tag （生成发布标签和日志）
       id: tag
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
-        # 提取作者名
         AUTHOR=$(echo "${{ env.REPO_URL }}" | cut -d'/' -f4)
         DEVICE_NAME="${{ env.DEVICE_NAME }}"
         BRANCH="${{ env.REPO_BRANCH }}"
         BUILD_TIME=$(date +"%Y%m%d-%H%M")
         
-        # 生成唯一 Tag: 机型-作者-分支-时间
         RELEASE_TAG="${DEVICE_NAME}-${AUTHOR}-${BRANCH}-${BUILD_TIME}"
         RELEASE_TAG=$(echo "$RELEASE_TAG" | sed 's/[^a-zA-Z0-9._-]/-/g')
         
         echo "release_tag=${RELEASE_TAG}" >> $GITHUB_OUTPUT
         
-        # 生成 Release 说明文件
         touch release.txt
         echo "## 🚀 OpenWrt 自动编译固件" >> release.txt
         echo "" >> release.txt
@@ -225,23 +189,11 @@ jobs:
         echo "| 🏷️ 版本标签 | \`${RELEASE_TAG}\` |" >> release.txt
         echo "" >> release.txt
         
-        if [ "${{ env.UPLOAD_COWTRANSFER }}" = "true" ] && [ -n "${{ steps.cowtransfer.outputs.url }}" ]; then
-          echo "🔗 **Cowtransfer**: [点击下载](${{ steps.cowtransfer.outputs.url }})" >> release.txt
-          echo "" >> release.txt
-        fi
-        
-        if [ "${{ env.UPLOAD_WETRANSFER }}" = "true" ] && [ -n "${{ steps.wetransfer.outputs.url }}" ]; then
-          echo "🔗 **WeTransfer**: [点击下载](${{ steps.wetransfer.outputs.url }})" >> release.txt
-          echo "" >> release.txt
-        fi
-        
         echo "---" >> release.txt
         echo "> ⚠️ **注意**: 请根据自己的机型选择对应的 Factory 或 Sysupgrade 固件" >> release.txt
         
         echo "status=success" >> $GITHUB_OUTPUT
 
-    # 16. 发布到 GitHub Release
-    # 使用 v2 版本插件，并增加了文件过滤，防止上传 35GB 裸文件导致失败
     - name: Upload firmware to release （发布到 GitHub Release）
       uses: softprops/action-gh-release@v2
       if: steps.tag.outputs.status == 'success' && !cancelled()
@@ -257,14 +209,12 @@ jobs:
           ${{ env.FIRMWARE }}/*.manifest
           ${{ env.FIRMWARE }}/*.tar.gz
 
-    # 17. 清理旧的工作流记录
     - name: Delete workflow runs （清理旧的工作流记录）
       uses: GitRML/delete-workflow-runs@main
       with:
         retain_days: 1
         keep_minimum_runs: 10
 
-    # 18. 清理旧的 Release 发布
     - name: Remove old Releases （清理旧的 Release 发布）
       uses: dev-drprasad/delete-older-releases@v0.2.1
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
