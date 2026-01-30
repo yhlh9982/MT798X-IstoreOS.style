@@ -99,20 +99,6 @@ jobs:
     - name: Update feeds
       run: cd openwrt && ./scripts/feeds update -a
 
-    - name: Install Priority Feeds (Fix Quickstart Dependencies)
-      run: |
-        cd openwrt
-        # 1. 强制安装 nas 源 (Quickstart 的后端核心和依赖)
-        # 使用 -f 确保覆盖系统默认的旧版本依赖
-        ./scripts/feeds install -a -f -p nas
-        
-        # 2. 强制安装 nas_luci 源 (Quickstart 的界面)
-        ./scripts/feeds install -a -f -p nas_luci
-        
-        # 3. 强制安装 istore 源 (商店本体及依赖)
-        # 建议使用 -a 安装该源下所有包，防止漏掉 luci-lib-taskd 等关键库
-        ./scripts/feeds install -a -f -p istore
-
     - name: Install remaining feeds
       run: cd openwrt && ./scripts/feeds install -a
 
