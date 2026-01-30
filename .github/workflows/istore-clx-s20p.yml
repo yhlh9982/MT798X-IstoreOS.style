@@ -4,13 +4,13 @@
 # Description: Build OpenWrt using GitHub Actions
 #
 
-name: mt7981-24.10-6.6
+name: istore-clx-s20p
 
 env:
   REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
   REPO_BRANCH: openwrt-24.10-6.6
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: mt7981-24.10-6.6.config
+  CONFIG_FILE: istore-clx-s20p.config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_BIN_DIR: true
@@ -21,14 +21,13 @@ env:
   TZ: Asia/Shanghai
 
 on:
+  repository_dispatch:
   workflow_dispatch:
     inputs:
       ssh:
         description: 'SSH connection to Actions'
         required: false
         default: 'false'
-  repository_dispatch:
-    types: [build]
 
 jobs:
   build:
