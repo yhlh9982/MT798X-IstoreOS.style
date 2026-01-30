@@ -168,9 +168,8 @@ jobs:
     # 12. 上传固件目录 (Artifacts)
     - name: Upload firmware directory （上传固件目录）
       uses: actions/upload-artifact@main
-      if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: OpenWrt_bin_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        name: OpenWrt_firmware_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}  # 改为 firmware
         path: ${{ env.FIRMWARE }}
 
     # 13. 上传到 CowTransfer (可选)
