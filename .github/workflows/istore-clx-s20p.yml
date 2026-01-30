@@ -4,36 +4,29 @@
 # Description: Build OpenWrt using GitHub Actions
 #
 
-name: istore-clx-s20p
+name: mt7981-24.10-6.6
 
 env:
-  # 设备名称，用于生成发布标签
-  DEVICE_NAME: istore-clx-s20p
-  # 源码仓库地址
   REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6 
-  # 源码分支
   REPO_BRANCH: openwrt-24.10-6.6
-  # Feeds 配置文件名
   FEEDS_CONF: feeds.conf.default
-  # .config 配置文件名
-  CONFIG_FILE: istore-clx-s20p.config
-  # 自定义脚本 1 (在更新 feeds 之前运行)
+  CONFIG_FILE: mt7981-24.10-6.6.config
   DIY_P1_SH: diy-part1.sh
-  # 自定义脚本 2 (在更新 feeds 之后运行)
   DIY_P2_SH: diy-part2.sh
-  # 上传 bin 目录 (包含所有 ipk)
   UPLOAD_BIN_DIR: true
-  # 上传固件目录 (包含 img/bin)
   UPLOAD_FIRMWARE: true
-  # 上传到第三方网盘
   UPLOAD_COWTRANSFER: false
   UPLOAD_WETRANSFER: false
-  # 发布到 GitHub Releases
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
 
+# 关键：使用英文双引号包裹，且必须顶格（无空格缩进）
 "on":
-  # 完全删除 push，只有手动和 API 触发
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '.github/workflows/**'
   repository_dispatch:
   workflow_dispatch:
     inputs:
@@ -41,17 +34,13 @@ env:
         description: 'SSH connection to Actions'
         required: false
         default: 'false'
-        
-#  schedule:
-#    - cron: 0 8 */5 * *
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4  # 建议固定版本
+      - name: Checkout
+        uses: actions/checkout@v4
 
     # 1. 清理磁盘空间
     - name: Free Disk Space (清理磁盘空间)
