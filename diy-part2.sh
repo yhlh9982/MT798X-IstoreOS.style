@@ -13,11 +13,11 @@
 set -e
 
 echo "=========================================="
-echo "DIY Part 2: Configuring Rust Local Build"
+echo "Rust修复"
 echo "=========================================="
 
-# 确保在源码根目录
-[ -f "scripts/feeds" ] || { echo "Error: Not in OpenWrt root"; exit 1; }
+# 确保在源码根目录执行
+[ -f "scripts/feeds" ] || { echo "❌ Error: Not in OpenWrt root"; exit 1; }
 
 RUST_MK="feeds/packages/lang/rust/Makefile"
 
@@ -25,17 +25,19 @@ RUST_MK="feeds/packages/lang/rust/Makefile"
 if [ ! -f "$RUST_MK" ]; then
     echo ">>> Rust Makefile missing, forcing sync from ImmortalWrt..."
     mkdir -p feeds/packages/lang
-    git clone --depth=1 https://github.com/immortalwrt/packages.git /tmp/imm_pkgs
-    cp -r /tmp/imm_pkgs/lang/rust feeds/packages/lang/
-    rm -rf /tmp/imm_pkgs
+    # 使用临时目录避免 set -e 触发后的残留
+    TEMP_DIR=$(mktemp -d)
+    git clone --depth=1 https://github.com/immortalwrt/packages.git "$TEMP_DIR"
+    cp -r "$TEMP_DIR/lang/rust" feeds/packages/lang/
+    rm -rf "$TEMP_DIR"
 fi
 
 # 2. 修改配置：强制本地编译 LLVM 和 Rust
 echo ">>> Modifying Makefile for local compilation..."
 
-# 获取最新版本号以保证兼容性 (从 24.10 分支获取)
 IMM_URL="https://raw.githubusercontent.com/immortalwrt/packages/openwrt-24.10/lang/rust/Makefile"
 curl -fsSL "$IMM_URL" -o /tmp/rust_ref.mk
+
 RUST_VER=$(grep '^PKG_VERSION:=' /tmp/rust_ref.mk | head -1 | cut -d'=' -f2 | tr -d ' ')
 RUST_HASH=$(grep '^PKG_HASH:=' /tmp/rust_ref.mk | head -1 | cut -d'=' -f2 | tr -d ' ')
 
@@ -45,36 +47,33 @@ if [ -n "$RUST_VER" ]; then
 fi
 
 # 【核心修改】：关闭预编译的 CI LLVM，强制从源码编译
-# 这将解决 "download-ci-llvm" 导致的下载错误或版本不匹配
 sed -i 's/download-ci-llvm=true/download-ci-llvm=false/g' "$RUST_MK"
-# 确保 Makefile 中不包含错误的下载链接后缀
+# 修正官方下载地址后缀问题
 sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
 
 echo "✅ Configuration set: Rust $RUST_VER will be built from source."
 
-# 3. 源码包预下载 (本地编译也需要源码 tar.xz 包)
-# 使用国内镜像加速源码下载
+# 3. 源码包预下载
 RUST_FILE="rustc-${RUST_VER}-src.tar.xz"
 mkdir -p dl
 if [ ! -f "dl/$RUST_FILE" ]; then
-    echo ">>> Pre-downloading source tarball..."
+    echo ">>> Pre-downloading source tarball from mirrors..."
     MIRRORS=(
         "https://mirrors.ustc.edu.cn/rust-static/dist/${RUST_FILE}"
         "https://mirrors.tuna.tsinghua.edu.cn/rustup/dist/${RUST_FILE}"
+        "https://static.rust-lang.org/dist/${RUST_FILE}"
     )
     for mirror in "${MIRRORS[@]}"; do
-        if wget --timeout=30 -O "dl/$RUST_FILE" "$mirror"; then
+        if wget --timeout=30 --tries=2 -O "dl/$RUST_FILE" "$mirror"; then
             echo "✅ Source tarball cached."
             break
         fi
     done
 fi
-
 # =========================================================
 # 智能修复脚本（兼容 package/ 和 feeds/）
 # =========================================================
-
-REPO_ROOT=$(dirname "$(readlink -f "$0")")
+REPO_ROOT=$(readlink -f "$GITHUB_WORKSPACE")
 CUSTOM_LUA="$REPO_ROOT/istore/istore_backend.lua"
 
 echo "Debug: Repo root is $REPO_ROOT"
