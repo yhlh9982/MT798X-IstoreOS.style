@@ -10,7 +10,6 @@
 # See /LICENSE for more information.
 #
 
-
 set -e
 
 echo "=========================================="
