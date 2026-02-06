@@ -167,14 +167,14 @@ fi
 # 给 configure 脚本添加 --disable-werror 参数，忽略警告
 sed -i 's/CONFIGURE_ARGS +=/CONFIGURE_ARGS += --disable-werror/' feeds/packages/libs/libxcrypt/Makefile
 
-# 自定义默认网关，后方的192.168.30.1即是可自定义的部分
+# 自定义默认网关，后方的192.168.9.1即是可自定义的部分
 sed -i 's/192.168.[0-9]*.[0-9]*/192.168.30.1/g' package/base-files/files/bin/config_generate
 
 # 自定义主机名
-#sed -i "s/hostname='ImmortalWrt'/hostname='360T7'/g" package/base-files/files/bin/config_generate
+#sed -i "s/hostname='ImmortalWrt'/hostname='DulWiFi TK Live'/g" package/base-files/files/bin/config_generate
 
 # 固件版本名称自定义
-#sed -i "s/DISTRIB_DESCRIPTION=.*/DISTRIB_DESCRIPTION='OpenWrt By gino $(date +"%Y%m%d")'/g" package/base-files/files/etc/openwrt_release
+#sed -i "s/DISTRIB_DESCRIPTION=.*/DISTRIB_DESCRIPTION='DulWiFi By gino $(date +"%Y%m%d")'/g" package/base-files/files/etc/openwrt_release
 
 # 取消原主题luci-theme-bootstrap 为默认主题
 # sed -i '/set luci.main.mediaurlbase=\/luci-static\/bootstrap/d' feeds/luci/themes/luci-theme-bootstrap/root/etc/uci-defaults/30_luci-theme-bootstrap
