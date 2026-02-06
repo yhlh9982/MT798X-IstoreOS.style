@@ -158,12 +158,6 @@ jobs:
       if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
 
     # 8. 下载软件包
-   - name: Clean old Go cache (important)
-      run: |
-        cd openwrt
-        rm -rf build_dir/host/go-*
-        rm -rf staging_dir/hostpkg/go
-
     - name: Download package （下载软件包）
       id: package
       run: |
