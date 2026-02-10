@@ -52,6 +52,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@main
 
+    # 1. 释放空间
     - name: Ultimate Disk Space Cleanup & Maximize Swap
       env:
         DEBIAN_FRONTEND: noninteractive
