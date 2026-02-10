@@ -16,102 +16,17 @@ echo "=========================================="
 echo "Rust 修复（高稳定性 / 高妥协性模式）"
 echo "=========================================="
 
-# 确保在源码根目录执行
-[ -f "scripts/feeds" ] || { echo "❌ Error: Not in OpenWrt root"; exit 1; }
+# 1. 强制删除当前 feeds 里的 Rust (1.90.0)
+rm -rf feeds/packages/lang/rust
 
-RUST_MK="feeds/packages/lang/rust/Makefile"
-REF_MK="/tmp/rust_ref.mk"
+# 2. 从 ImmortalWrt 23.05 分支拉取稳定版 Rust (1.85.0)
+# 这个版本的预编译包下载非常稳定，不需要本地编译 LLVM，省时省空间
+git clone --depth 1 -b openwrt-23.05 https://github.com/immortalwrt/packages.git temp_packages
+cp -r temp_packages/lang/rust feeds/packages/lang/
+rm -rf temp_packages
 
-#--------------------------------------------------
-# 1. 确保 Rust Makefile 存在
-#--------------------------------------------------
-if [ ! -f "$RUST_MK" ]; then
-    echo ">>> Rust Makefile missing, syncing from ImmortalWrt packages..."
-    mkdir -p feeds/packages/lang
+echo "✅ Rust replaced with stable version from 23.05 branch."
 
-    TEMP_DIR=$(mktemp -d)
-    if git clone --depth=1 https://github.com/immortalwrt/packages.git "$TEMP_DIR"; then
-        cp -r "$TEMP_DIR/lang/rust" feeds/packages/lang/
-    else
-        echo "❌ Failed to clone ImmortalWrt packages"
-        rm -rf "$TEMP_DIR"
-        exit 1
-    fi
-    rm -rf "$TEMP_DIR"
-fi
-
-#--------------------------------------------------
-# 2. 获取权威 Rust 版本信息（多级 fallback）
-#--------------------------------------------------
-IMM_URL="https://raw.githubusercontent.com/immortalwrt/packages/openwrt-24.10/lang/rust/Makefile"
-
-echo ">>> Fetching reference Rust Makefile..."
-
-if ! curl -fsSL "$IMM_URL" -o "$REF_MK"; then
-    echo "⚠️ Failed to fetch remote Makefile, falling back to local one"
-    cp "$RUST_MK" "$REF_MK"
-fi
-
-RUST_VER=$(grep '^PKG_VERSION:=' "$REF_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-RUST_HASH=$(grep '^PKG_HASH:=' "$REF_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-
-if [ -z "$RUST_VER" ]; then
-    echo "❌ Unable to determine Rust version"
-    exit 1
-fi
-
-echo ">>> Detected Rust version: $RUST_VER"
-
-#--------------------------------------------------
-# 3. 同步版本 / Hash，并强制源码编译
-#--------------------------------------------------
-sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$RUST_VER/" "$RUST_MK"
-[ -n "$RUST_HASH" ] && sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$RUST_HASH/" "$RUST_MK"
-
-# 关闭 CI LLVM，强制本地构建
-sed -i 's/download-ci-llvm=true/download-ci-llvm=false/g' "$RUST_MK"
-
-# 修正源码地址
-sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
-
-echo "✅ Rust Makefile adjusted for source build"
-
-#--------------------------------------------------
-# 4. 预下载 Rust 源码（多镜像 + 校验）
-#--------------------------------------------------
-RUST_FILE="rustc-${RUST_VER}-src.tar.xz"
-DL_PATH="dl/$RUST_FILE"
-
-mkdir -p dl
-
-if [ ! -s "$DL_PATH" ]; then
-    echo ">>> Pre-downloading Rust source tarball..."
-
-    MIRRORS=(
-        "https://mirrors.ustc.edu.cn/rust-static/dist/${RUST_FILE}"
-        "https://mirrors.tuna.tsinghua.edu.cn/rustup/dist/${RUST_FILE}"
-        "https://static.rust-lang.org/dist/${RUST_FILE}"
-    )
-
-    DOWNLOADED=false
-    for mirror in "${MIRRORS[@]}"; do
-        echo ">>> Trying $mirror"
-        rm -f "$DL_PATH"
-        if wget --timeout=30 --tries=3 -O "$DL_PATH" "$mirror"; then
-            if [ -s "$DL_PATH" ]; then
-                DOWNLOADED=true
-                echo "✅ Rust source cached successfully"
-                break
-            fi
-        fi
-    done
-
-    if [ "$DOWNLOADED" != "true" ]; then
-        echo "❌ Failed to download Rust source from all mirrors"
-        exit 1
-    fi
-else
-    echo ">>> Rust source already cached"
 fi
 
 echo "=========================================="
