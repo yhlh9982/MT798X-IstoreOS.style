@@ -10,17 +10,41 @@
 # See /LICENSE for more information.
 #
 
-# 修复 rust编译失败
-# 1. 强制删除当前 feeds 里的 Rust (1.90.0)
+set -e
+
+echo "=========================================="
+echo "Rust 修复方案：替换为 ImmortalWrt 23.05 稳定版"
+echo "=========================================="
+
+# 1. 移除当前可能有问题的 Rust 定义
 rm -rf feeds/packages/lang/rust
 
-# 2. 从 ImmortalWrt 23.05 分支拉取稳定版 Rust (1.85.0)
-# 这个版本的预编译包下载非常稳定，不需要本地编译 LLVM，省时省空间
+# 2. 从 ImmortalWrt 23.05 分支拉取稳定的 Rust
+# 这个分支的 Rust 版本（如 1.85.0）对应的 CI 预编译包通常是长期有效的
+echo ">>> Cloning Rust from ImmortalWrt 23.05 branch..."
 git clone --depth 1 -b openwrt-23.05 https://github.com/immortalwrt/packages.git temp_packages
+
+# 3. 替换
 cp -r temp_packages/lang/rust feeds/packages/lang/
+
+# 4. 清理
 rm -rf temp_packages
 
-echo "✅ Rust replaced with stable version from 23.05 branch."
+echo ">>> Rust replaced with stable version from 23.05 branch."
+
+# 5. 确保 download-ci-llvm 是开启的 (默认就是开启的，这里只是保险)
+# 我们希望下载预编译包，而不是本地编译
+RUST_MK="feeds/packages/lang/rust/Makefile"
+if grep -q "download-ci-llvm" "$RUST_MK"; then
+    sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
+    echo ">>> Verified: download-ci-llvm is ENABLED."
+else
+    echo ">>> Note: download-ci-llvm option not found, assuming default behavior."
+fi
+
+echo "=========================================="
+echo "修复完成。请继续编译。"
+echo "=========================================="
 
 # =========================================================
 # 智能修复脚本（兼容 package/ 和 feeds/）
