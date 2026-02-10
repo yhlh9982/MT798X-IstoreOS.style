@@ -10,12 +10,7 @@
 # See /LICENSE for more information.
 #
 
-set -e
-
-echo "=========================================="
-echo "Rust 修复（高稳定性 / 高妥协性模式）"
-echo "=========================================="
-
+# 修复 rust编译失败
 # 1. 强制删除当前 feeds 里的 Rust (1.90.0)
 rm -rf feeds/packages/lang/rust
 
