@@ -13,16 +13,15 @@
 set -e
 
 echo "=========================================="
-echo "Rust 修复方案：替换为 ImmortalWrt 23.05 稳定版"
+echo "Rust 修复方案：替换为 ImmortalWrt 25.12 稳定版"
 echo "=========================================="
 
 # 1. 移除当前可能有问题的 Rust 定义
 rm -rf feeds/packages/lang/rust
 
-# 2. 从 ImmortalWrt 23.05 分支拉取稳定的 Rust
-# 这个分支的 Rust 版本（如 1.85.0）对应的 CI 预编译包通常是长期有效的
-echo ">>> Cloning Rust from ImmortalWrt 23.05 branch..."
-git clone --depth 1 -b openwrt-23.05 https://github.com/immortalwrt/packages.git temp_packages
+# 2. 从其他 ImmortalWrt分支拉取稳定的 Rust
+echo ">>> Cloning Rust from ImmortalWrt 25.12 branch..."
+git clone --depth 1 -b openwrt-25.12 https://github.com/immortalwrt/packages.git temp_packages
 
 # 3. 替换
 cp -r temp_packages/lang/rust feeds/packages/lang/
