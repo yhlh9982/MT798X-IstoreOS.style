@@ -52,17 +52,6 @@ jobs:
     - name: Checkout
       uses: actions/checkout@main
 
-    # 0. 缓存 OpenWrt 下载和 Host 构建
-    - name: Cache OpenWrt downloads
-      uses: actions/cache@v4
-      with:
-        path: |
-          /workdir/openwrt/dl
-          /workdir/openwrt/build_dir/host
-        key: openwrt-${{ env.DEVICE_NAME }}-${{ hashFiles('openwrt/feeds.conf.default', 'openwrt/.config') }}
-        restore-keys: |
-          openwrt-${{ env.DEVICE_NAME }}-
-
     - name: Ultimate Disk Space Cleanup & Maximize Swap
       env:
         DEBIAN_FRONTEND: noninteractive
