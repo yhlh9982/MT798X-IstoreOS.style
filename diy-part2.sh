@@ -37,7 +37,6 @@ RUST_MK="feeds/packages/lang/rust/Makefile"
 if [ -f "$RUST_MK" ]; then
     echo ">>> Configuring Rust for LOCAL compilation..."
     
-    # 使用通配符匹配，防止因空格问题导致替换失败
     # 将 download-ci-llvm = true (或类似写法) 强制改为 false
     sed -i 's/download-ci-llvm.*=.*/download-ci-llvm = false/g' "$RUST_MK"
     
