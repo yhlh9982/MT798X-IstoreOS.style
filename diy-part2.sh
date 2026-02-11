@@ -19,7 +19,7 @@ echo "=========================================="
 # 1. 移除当前可能不稳定的 Rust
 rm -rf feeds/packages/lang/rust
 
-# 2. 从 ImmortalWrt 23.05 分支拉取稳定的 Rust (版本 1.85.0)
+# 2. 从 openwrt 23.05 分支拉取稳定的 Rust (版本 1.85.0)
 # 虽然我们要本地编译，但使用旧版源码更稳定，兼容性更好
 echo ">>> Cloning Rust from ImmortalWrt 23.05 branch..."
 git clone --depth 1 -b openwrt-23.05 https://github.com/openwrt/packages.git temp_packages
