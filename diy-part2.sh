@@ -22,7 +22,7 @@ rm -rf feeds/packages/lang/rust
 # 2. 从 ImmortalWrt 23.05 分支拉取稳定的 Rust (版本 1.85.0)
 # 虽然我们要本地编译，但使用旧版源码更稳定，兼容性更好
 echo ">>> Cloning Rust from ImmortalWrt 23.05 branch..."
-git clone --depth 1 -b openwrt-23.05 https://github.com/immortalwrt/packages.git temp_packages
+git clone --depth 1 -b openwrt-23.05 https://github.com/openwrt/packages.git temp_packages
 
 # 3. 替换
 cp -r temp_packages/lang/rust feeds/packages/lang/
