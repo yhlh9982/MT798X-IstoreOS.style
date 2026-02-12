@@ -169,6 +169,9 @@ fi
 # 给 configure 脚本添加 --disable-werror 参数，忽略警告
 sed -i 's/CONFIGURE_ARGS +=/CONFIGURE_ARGS += --disable-werror/' feeds/packages/libs/libxcrypt/Makefile
 
+# 移动 tailscale 位置从服务到VPN
+sed -i 's|admin/services/tailscale|admin/vpn/tailscale|g' package/tailscale/root/usr/share/luci/menu.d/luci-app-tailscale-community.json
+
 # 自定义默认网关，后方的192.168.30.1即是可自定义的部分
 sed -i 's/192.168.[0-9]*.[0-9]*/192.168.30.1/g' package/base-files/files/bin/config_generate
 
