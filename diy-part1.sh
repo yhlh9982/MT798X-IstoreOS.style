@@ -1,133 +1,40 @@
 #!/bin/bash
+#
+# https://github.com/P3TERX/Actions-OpenWrt
+# File name: diy-part1.sh
+# Description: OpenWrt DIY script part 1 (Before Update feeds)
+#
+# Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
+#
+# This is free software, licensed under the MIT License.
+# See /LICENSE for more information.
+#
 
-#安装和更新软件包
-UPDATE_PACKAGE() {
-	local PKG_NAME=$1
-	local PKG_REPO=$2
-	local PKG_BRANCH=$3
-	local PKG_SPECIAL=$4
-	local PKG_LIST=("$PKG_NAME" $5)  # 第5个参数为自定义名称列表
-	local REPO_NAME=${PKG_REPO#*/}
+# istore
+git clone --depth=1 https://github.com/linkease/istore  package/istore
+git clone --depth=1 https://github.com/linkease/nas-packages  package/nas
+git clone --depth=1 https://github.com/linkease/nas-packages-luci  package/nas-luci
 
-	echo " "
+# 科学插件
+git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall  package/passwall
+git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall2  package/passwall2
+# git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages  package/passwall-packages
+git clone --depth=1 -b master https://github.com/vernesong/OpenClash  package/OpenClash
+git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki  package/nikki
+git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo  package/momo
+git clone --depth=1 -b master https://github.com/QiuSimons/luci-app-daed  package/daed
+git clone --depth=1 -b master https://github.com/fw876/helloworld  package/helloworld
 
-	# 删除本地可能存在的不同名称的软件包
-	for NAME in "${PKG_LIST[@]}"; do
-		# 查找匹配的目录
-		echo "Search directory: $NAME"
-		local FOUND_DIRS=$(find ../feeds/luci/ ../feeds/packages/ -maxdepth 3 -type d -iname "*$NAME*" 2>/dev/null)
+# 功能插件
+git clone --depth=1 https://github.com/sirpdboy/luci-app-watchdog package/watchdog
+git clone --depth=1 https://github.com/sirpdboy/luci-app-taskplan package/taskplan
+git clone --depth=1 https://github.com/iv7777/luci-app-authshield package/authshield
+git clone --depth=1 https://github.com/EasyTier/luci-app-easytier package/easytier
+git clone --depth=1 https://github.com/Tokisaki-Galaxy/luci-app-tailscale-community package/tailscale
 
-		# 删除找到的目录
-		if [ -n "$FOUND_DIRS" ]; then
-			while read -r DIR; do
-				rm -rf "$DIR"
-				echo "Delete directory: $DIR"
-			done <<< "$FOUND_DIRS"
-		else
-			echo "Not fonud directory: $NAME"
-		fi
-	done
-
-	# 克隆 GitHub 仓库
-	git clone --depth=1 --single-branch --branch $PKG_BRANCH "https://github.com/$PKG_REPO.git"
-
-	# 处理克隆的仓库
-	if [[ "$PKG_SPECIAL" == "pkg" ]]; then
-		find ./$REPO_NAME/*/ -maxdepth 3 -type d -iname "*$PKG_NAME*" -prune -exec cp -rf {} ./ \;
-		rm -rf ./$REPO_NAME/
-	elif [[ "$PKG_SPECIAL" == "name" ]]; then
-		mv -f $REPO_NAME $PKG_NAME
-	fi
-}
-
-# 调用示例
-# UPDATE_PACKAGE "OpenAppFilter" "destan19/OpenAppFilter" "master" "" "custom_name1 custom_name2"
-# UPDATE_PACKAGE "open-app-filter" "destan19/OpenAppFilter" "master" "" "luci-app-appfilter oaf" 这样会把原有的open-app-filter，luci-app-appfilter，oaf相关组件删除，不会出现coremark错误。
-
-# UPDATE_PACKAGE "包名" "项目地址" "项目分支" "pkg/name，可选，pkg为从大杂烩中单独提取包名插件；name为重命名为包名"
-UPDATE_PACKAGE "argon" "sbwml/luci-theme-argon" "openwrt-24.10"
-UPDATE_PACKAGE "aurora" "eamonxg/luci-theme-aurora" "master"
-UPDATE_PACKAGE "aurora-config" "eamonxg/luci-app-aurora-config" "master"
-UPDATE_PACKAGE "kucat" "sirpdboy/luci-theme-kucat" "master"
-UPDATE_PACKAGE "kucat-config" "sirpdboy/luci-app-kucat-config" "master"
-
-#科学插件
-UPDATE_PACKAGE "helloworld-ssrp" "fw876/helloworld" "master"
-UPDATE_PACKAGE "homeproxy" "VIKINGYFY/homeproxy" "main"
-UPDATE_PACKAGE "momo" "nikkinikki-org/OpenWrt-momo" "main"
-UPDATE_PACKAGE "nikki" "nikkinikki-org/OpenWrt-nikki" "main"
-UPDATE_PACKAGE "openclash" "vernesong/OpenClash" "master" "pkg"
-UPDATE_PACKAGE "passwall" "Openwrt-Passwall/openwrt-passwall" "main" "pkg"
-UPDATE_PACKAGE "passwall2" "Openwrt-Passwall/openwrt-passwall2" "main" "pkg"
-# UPDATE_PACKAGE "passwall-packages" "Openwrt-Passwall/openwrt-passwall-packages" "main" 
-
-# 常用工具与应用
-UPDATE_PACKAGE "ddns-go" "sirpdboy/luci-app-ddns-go" "main"  #luci-app-ddns-go
-UPDATE_PACKAGE "netspeedtest" "sirpdboy/luci-app-netspeedtest" "master" "" "homebox speedtest"  #homebox speedtest测速
-UPDATE_PACKAGE "poweroffdevice" "sirpdboy/luci-app-poweroffdevice" "js"   #关机
-UPDATE_PACKAGE "taskplan" "sirpdboy/luci-app-taskplan" "master"    #计划任务
-UPDATE_PACKAGE "watchdog" "sirpdboy/luci-app-watchdog" "main"  #看门狗
-UPDATE_PACKAGE "netwizard" "sirpdboy/luci-app-netwizard" "main"  #网络设置向导
-UPDATE_PACKAGE "advancedplus" "sirpdboy/luci-app-advancedplus" "main"  #高级设置
-UPDATE_PACKAGE "partexp" "sirpdboy/luci-app-partexp" "main"  #分区助手
-
-UPDATE_PACKAGE "quickfile" "sbwml/luci-app-quickfile" "main" 
-UPDATE_PACKAGE "mosdns" "sbwml/luci-app-mosdns" "v5" "" "v2dat"
-UPDATE_PACKAGE "openlist2" "sbwml/luci-app-openlist2" "main"    #alist的新替换openlist
-rm -rf feeds/packages/lang/golang
-UPDATE_PACKAGE "packages_lang_golang" "sbwml/packages_lang_golang" "24.x" 
-UPDATE_PACKAGE "qbittorrent" "sbwml/luci-app-qbittorrent" "master" "" "qt6base qt6tools rblibtorrent"  #qbittorrent下载
-
-UPDATE_PACKAGE "authshield" "iv7777/luci-app-authshield" "main"  #防止异常登录保护
-UPDATE_PACKAGE "tailscale" "Tokisaki-Galaxy/luci-app-tailscale-community" "master"  #luci-app-tailscale
-UPDATE_PACKAGE "MentoHUST" "KyleRicardo/MentoHUST-OpenWrt-ipk" "master"  #锐捷验证 luci-app-mentohust
-# UPDATE_PACKAGE "diskman" "lisaac/luci-app-diskman" "master"  #luci-app-diskman
-UPDATE_PACKAGE "easytier" "EasyTier/luci-app-easytier" "main"  #luci-app-easytier
-UPDATE_PACKAGE "fancontrol" "rockjake/luci-app-fancontrol" "main"   #Openwrt简易通用风扇控制
-UPDATE_PACKAGE "gecoosac" "lwb1978/openwrt-gecoosac" "main"   #集客 AC 控制器
-UPDATE_PACKAGE "open-app-filter" "destan19/OpenAppFilter" "master" "" "luci-app-appfilter oaf"  #应用过滤(OAF)
-UPDATE_PACKAGE "viking" "VIKINGYFY/packages" "main" "" "luci-app-timewol luci-app-wolplus"
-UPDATE_PACKAGE "vnt" "lmq8267/luci-app-vnt" "main"
-UPDATE_PACKAGE "qmodem" "FUjr/QModem" "main"
-
-UPDATE_PACKAGE "istore" "linkease/istore" "main"
-#更新软件包版本
-UPDATE_VERSION() {
-	local PKG_NAME=$1
-	local PKG_MARK=${2:-false}
-	local PKG_FILES=$(find ./ ../feeds/packages/ -maxdepth 3 -type f -wholename "*/$PKG_NAME/Makefile")
-
-	if [ -z "$PKG_FILES" ]; then
-		echo "$PKG_NAME not found!"
-		return
-	fi
-
-	echo -e "\n$PKG_NAME version update has started!"
-
-	for PKG_FILE in $PKG_FILES; do
-		local PKG_REPO=$(grep -Po "PKG_SOURCE_URL:=https://.*github.com/\K[^/]+/[^/]+(?=.*)" $PKG_FILE)
-		local PKG_TAG=$(curl -sL "https://api.github.com/repos/$PKG_REPO/releases" | jq -r "map(select(.prerelease == $PKG_MARK)) | first | .tag_name")
-
-		local OLD_VER=$(grep -Po "PKG_VERSION:=\K.*" "$PKG_FILE")
-		local OLD_URL=$(grep -Po "PKG_SOURCE_URL:=\K.*" "$PKG_FILE")
-		local OLD_FILE=$(grep -Po "PKG_SOURCE:=\K.*" "$PKG_FILE")
-		local OLD_HASH=$(grep -Po "PKG_HASH:=\K.*" "$PKG_FILE")
-
-		local PKG_URL=$([[ "$OLD_URL" == *"releases"* ]] && echo "${OLD_URL%/}/$OLD_FILE" || echo "${OLD_URL%/}")
-
-		local NEW_VER=$(echo $PKG_TAG | sed -E 's/[^0-9]+/\./g; s/^\.|\.$//g')
-		local NEW_URL=$(echo $PKG_URL | sed "s/\$(PKG_VERSION)/$NEW_VER/g; s/\$(PKG_NAME)/$PKG_NAME/g")
-		local NEW_HASH=$(curl -sL "$NEW_URL" | sha256sum | cut -d ' ' -f 1)
-
-		echo "old version: $OLD_VER $OLD_HASH"
-		echo "new version: $NEW_VER $NEW_HASH"
-
-		if [[ "$NEW_VER" =~ ^[0-9].* ]] && dpkg --compare-versions "$OLD_VER" lt "$NEW_VER"; then
-			sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=$NEW_VER/g" "$PKG_FILE"
-			sed -i "s/PKG_HASH:=.*/PKG_HASH:=$NEW_HASH/g" "$PKG_FILE"
-			echo "$PKG_FILE version has been updated!"
-		else
-			echo "$PKG_FILE version is already the latest!"
-		fi
-	done
-}
+# 主题
+git clone --depth=1 -b openwrt-24.10 https://github.com/sbwml/luci-theme-argon package/argon
+git clone --depth=1 https://github.com/eamonxg/luci-theme-aurora package/aurora
+git clone --depth=1 https://github.com/eamonxg/luci-app-aurora-config package/aurora-config
+git clone --depth=1 https://github.com/sirpdboy/luci-theme-kucat package/kucat
+git clone --depth=1 -b master https://github.com/sirpdboy/luci-app-kucat-config package/kucat-config
