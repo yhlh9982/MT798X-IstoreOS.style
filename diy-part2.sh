@@ -28,24 +28,7 @@ git clone --depth 1 -b openwrt-23.05 https://github.com/immortalwrt/packages.git
 cp -r temp_packages/lang/rust feeds/packages/lang/
 rm -rf temp_packages
 
-echo ">>> Rust source replaced."
-
-# 4. 【修正版】强制关闭 CI 下载，启用本地编译
-# 定义变量
-RUST_MK="feeds/packages/lang/rust/Makefile"
-
-if [ -f "$RUST_MK" ]; then
-    echo ">>> Configuring Rust for LOCAL compilation..."
-    
-    # 将 download-ci-llvm = true (或类似写法) 强制改为 false
-    sed -i 's/download-ci-llvm.*=.*/download-ci-llvm = false/g' "$RUST_MK"
-    
-    echo "✅ download-ci-llvm has been DISABLED."
-    echo "⚠️  WARNING: This will trigger LLVM compilation (Slow & Heavy)."
-else
-    echo "❌ Error: Rust Makefile not found at $RUST_MK"
-    exit 1
-fi
+echo "✅ Rust has been replaced! (Native CI download will be used)"
 
 # =========================================================
 # 智能修复脚本（兼容 package/ 和 feeds/）
