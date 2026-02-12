@@ -10,112 +10,114 @@
 # See /LICENSE for more information.
 #
 
-set -e
-
 echo "=========================================="
-echo "Rust 修复（高稳定性 / 高妥协性模式）"
+echo "Rust 编译修复脚本 (路径增强版)"
 echo "=========================================="
 
-# 确保在源码根目录执行
-[ -f "scripts/feeds" ] || { echo "❌ Error: Not in OpenWrt root"; exit 1; }
+# 1. 环境检查与路径识别
+# 优先使用脚本后的第一个参数作为路径，否则使用当前路径
+TARGET_DIR="${1:-$(pwd)}"
 
-RUST_MK="feeds/packages/lang/rust/Makefile"
-REF_MK="/tmp/rust_ref.mk"
-
-#--------------------------------------------------
-# 1. 确保 Rust Makefile 存在
-#--------------------------------------------------
-if [ ! -f "$RUST_MK" ]; then
-    echo ">>> Rust Makefile missing, syncing from ImmortalWrt packages..."
-    mkdir -p feeds/packages/lang
-
-    TEMP_DIR=$(mktemp -d)
-    if git clone --depth=1 https://github.com/immortalwrt/packages.git "$TEMP_DIR"; then
-        cp -r "$TEMP_DIR/lang/rust" feeds/packages/lang/
+# 检查是否是有效的 OpenWrt 源码目录
+check_openwrt_root() {
+    if [ -f "$1/scripts/feeds" ] && [ -f "$1/Makefile" ]; then
+        return 0
     else
-        echo "❌ Failed to clone ImmortalWrt packages"
-        rm -rf "$TEMP_DIR"
+        return 1
+    fi
+}
+
+if check_openwrt_root "$TARGET_DIR"; then
+    OPENWRT_ROOT="$TARGET_DIR"
+    echo "✅ 找到 OpenWrt 根目录: $OPENWRT_ROOT"
+else
+    echo "⚠️  在 $TARGET_DIR 未找到 OpenWrt 源码"
+    echo "正在尝试寻找当前目录下的子目录..."
+    # 尝试在子目录中寻找一级
+    SUB_DIR=$(find . -maxdepth 2 -name "scripts" -type d | head -n 1 | xargs dirname)
+    if [ -n "$SUB_DIR" ] && check_openwrt_root "$SUB_DIR"; then
+        OPENWRT_ROOT="$(realpath "$SUB_DIR")"
+        echo "✅ 在子目录中找到 OpenWrt 根目录: $OPENWRT_ROOT"
+    else
+        echo "❌ 错误: 无法确定 OpenWrt 源码根目录。"
+        echo "用法: $0 /your/openwrt/path"
         exit 1
     fi
-    rm -rf "$TEMP_DIR"
 fi
 
-#--------------------------------------------------
-# 2. 获取权威 Rust 版本信息（多级 fallback）
-#--------------------------------------------------
+# 定义相关路径
+RUST_DIR="$OPENWRT_ROOT/feeds/packages/lang/rust"
+RUST_MK="$RUST_DIR/Makefile"
+DL_DIR="$OPENWRT_ROOT/dl"
+
+# 2. 确保 Rust 文件夹存在
+if [ ! -d "$RUST_DIR" ]; then
+    echo ">>> Rust 文件夹缺失，正在尝试同步 Feeds..."
+    cd "$OPENWRT_ROOT" || exit
+    ./scripts/feeds update packages
+    ./scripts/feeds install -a -p packages
+    cd - > /dev/null || exit
+fi
+
+# 3. 获取权威版本信息 (使用 24.10 作为参考标准)
+REF_MK="/tmp/rust_ref.mk"
 IMM_URL="https://raw.githubusercontent.com/openwrt/packages/openwrt-24.10/lang/rust/Makefile"
 
-echo ">>> Fetching reference Rust Makefile..."
-
+echo ">>> 正在获取远程版本元数据..."
 if ! curl -fsSL "$IMM_URL" -o "$REF_MK"; then
-    echo "⚠️ Failed to fetch remote Makefile, falling back to local one"
-    cp "$RUST_MK" "$REF_MK"
+    echo "⚠️ 无法获取远程 Makefile，将使用本地版本"
+    [ -f "$RUST_MK" ] && cp "$RUST_MK" "$REF_MK" || { echo "❌ 无法找到任何 Makefile"; exit 1; }
 fi
 
 RUST_VER=$(grep '^PKG_VERSION:=' "$REF_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
 RUST_HASH=$(grep '^PKG_HASH:=' "$REF_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
 
-if [ -z "$RUST_VER" ]; then
-    echo "❌ Unable to determine Rust version"
-    exit 1
-fi
+echo ">>> 目标 Rust 版本: $RUST_VER"
 
-echo ">>> Detected Rust version: $RUST_VER"
+# 4. 修改 Makefile 参数
+echo ">>> 正在应用优化参数到: $RUST_MK"
 
-#--------------------------------------------------
-# 3. 同步版本 / Hash，并强制源码编译
-#--------------------------------------------------
+# 更新版本号和 Hash
 sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$RUST_VER/" "$RUST_MK"
 [ -n "$RUST_HASH" ] && sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$RUST_HASH/" "$RUST_MK"
 
-# 关闭 CI LLVM，强制本地构建
-sed -i 's/download-ci-llvm=true/download-ci-llvm=false/g' "$RUST_MK"
+# 【关键】开启下载预编译 LLVM 模式，防止磁盘空间爆满
+if grep -q "download-ci-llvm" "$RUST_MK"; then
+    echo ">>> 开启 download-ci-llvm 以节省磁盘空间"
+    sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
+fi
 
-# 修正源码地址
+# 修正源码下载地址
 sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
 
-echo "✅ Rust Makefile adjusted for source build"
-
-#--------------------------------------------------
-# 4. 预下载 Rust 源码（多镜像 + 校验）
-#--------------------------------------------------
+# 5. 预下载源码（使用国内镜像加速）
 RUST_FILE="rustc-${RUST_VER}-src.tar.xz"
-DL_PATH="dl/$RUST_FILE"
-
-mkdir -p dl
+DL_PATH="$DL_DIR/$RUST_FILE"
+mkdir -p "$DL_DIR"
 
 if [ ! -s "$DL_PATH" ]; then
-    echo ">>> Pre-downloading Rust source tarball..."
-
+    echo ">>> 正在预下载 Rust 源码包..."
     MIRRORS=(
         "https://mirrors.ustc.edu.cn/rust-static/dist/${RUST_FILE}"
         "https://mirrors.tuna.tsinghua.edu.cn/rustup/dist/${RUST_FILE}"
         "https://static.rust-lang.org/dist/${RUST_FILE}"
     )
 
-    DOWNLOADED=false
     for mirror in "${MIRRORS[@]}"; do
-        echo ">>> Trying $mirror"
-        rm -f "$DL_PATH"
-        if wget --timeout=30 --tries=3 -O "$DL_PATH" "$mirror"; then
+        echo ">>> 尝试镜像: $mirror"
+        if wget --timeout=20 --tries=2 -O "$DL_PATH" "$mirror"; then
             if [ -s "$DL_PATH" ]; then
-                DOWNLOADED=true
-                echo "✅ Rust source cached successfully"
+                echo "✅ 源码已成功缓存至 $DL_PATH"
                 break
             fi
         fi
     done
-
-    if [ "$DOWNLOADED" != "true" ]; then
-        echo "❌ Failed to download Rust source from all mirrors"
-        exit 1
-    fi
 else
-    echo ">>> Rust source already cached"
+    echo ">>> 源码已存在，跳过下载。"
 fi
 
 echo "=========================================="
-echo "Rust 修复完成：$RUST_VER"
+echo "✅ 针对 $OPENWRT_ROOT 的 Rust 修复已完成"
 echo "=========================================="
 
 # =========================================================
