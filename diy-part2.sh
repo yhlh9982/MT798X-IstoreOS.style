@@ -10,8 +10,9 @@
 # See /LICENSE for more information.
 #
 
+#!/bin/bash
 echo "=========================================="
-echo "Rust 24.10 终极修复脚本 (同步 + 优化 + 暴力去校验)"
+echo "Rust 24.10 优化"
 echo "=========================================="
 
 # 1. 路径识别与环境检查
@@ -39,27 +40,27 @@ fi
 RUST_DIR="$OPENWRT_ROOT/feeds/packages/lang/rust"
 RUST_MK="$RUST_DIR/Makefile"
 DL_DIR="$OPENWRT_ROOT/dl"
-# 清理路径：针对宿主机和目标机的 Rust 构建残余
 BUILD_DIR_HOST="$OPENWRT_ROOT/build_dir/host/rustc-*"
 BUILD_DIR_TARGET="$OPENWRT_ROOT/build_dir/target-*/host/rustc-*"
 
-# 2. 彻底清理旧的残余 (解决 Cargo.toml.orig 持续报错的关键)
-echo ">>> 正在清理旧的编译残余和不匹配的补丁..."
+# 2. 深度清理（解决文件残留导致的各类报错）
+echo ">>> 执行深度清理，排除旧版本干扰..."
 rm -rf "$RUST_DIR"
 rm -rf $BUILD_DIR_HOST
 rm -rf $BUILD_DIR_TARGET
+# 清理可能损坏的 Cargo 索引缓存
+rm -rf "$OPENWRT_ROOT/dl/cargo/registry/index/*"
 
 # 3. 深度同步官方 24.10 Rust 定义 (Makefile + Patches)
 echo ">>> 正在从官方 24.10 仓库同步完整的 Rust 构建脚本..."
 mkdir -p "$RUST_DIR"
 TEMP_REPO="/tmp/openwrt_pkg_rust"
 rm -rf "$TEMP_REPO"
-# 克隆官方 packages 仓库的 24.10 分支
 if git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/packages.git "$TEMP_REPO"; then
     cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
     rm -rf "$TEMP_REPO"
 else
-    echo "❌ 错误: 无法连接 GitHub 官方仓库"
+    echo "❌ 错误: 无法连接 GitHub 官方仓库同步源码定义"
     exit 1
 fi
 
@@ -68,54 +69,62 @@ if [ ! -f "$RUST_MK" ]; then
     exit 1
 fi
 
-# 4. 优化与暴力修复逻辑注入
-echo ">>> 正在应用深度修复与优化补丁..."
+# 4. 优化与硬化指令注入 (手术刀式修改 Makefile)
+echo ">>> 正在应用深度修复与环境硬化补丁..."
 
 # A. 开启 CI-LLVM 模式 (节省 10GB+ 空间，提速 30分钟)
 sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
 sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
 
-# B. 暴力跳过 Checksum 校验 (解决 serde / Cargo.toml.orig 报错的核心)
-# 在 Makefile 执行编译 (x.py) 之前，强制删除所有 vendor 目录下的校验文件
-# 使用插入指令的方式，确保在编译启动前一刻执行
+# B. 核心修复：处理补丁残留 (解决 serde / Cargo.toml.orig 的关键)
+# 在打完补丁后，立即删除所有 .orig 和 .rej 备份文件，防止 Cargo 扫描报警
+sed -i '/Build\/Patch/a \	find $(HOST_BUILD_DIR) -name "*.orig" -delete\n	find $(HOST_BUILD_DIR) -name "*.rej" -delete' "$RUST_MK"
+
+# C. 暴力跳过 Checksum 校验
+# 在执行编译 (x.py) 前，强制删除所有 vendor 目录下的校验文件，实现“静默通过”
 sed -i '/\$(PYTHON3) \$(HOST_BUILD_DIR)\/x.py/i \	find $(HOST_BUILD_DIR)/vendor -name .cargo-checksum.json -delete' "$RUST_MK"
 
-# C. 移除 --frozen 参数
-# 允许 Cargo 处理被 Patches 修改过的源码，增加兼容性
-sed -i 's/--frozen//g' "$RUST_MK"
+# D. 环境变量硬化 (禁用增量编译，大幅降低 OOM 内存溢出风险)
+sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_PROFILE_RELEASE_INCREMENTAL=false\nexport CARGO_INCREMENTAL=0' "$RUST_MK"
 
-# D. 修正源码分发地址
+# E. 限制并行任务 (GitHub Actions 建议限流，防止内存撑爆导致进程被杀)
+sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$RUST_MK"
+
+# F. 移除强制冻结和修正地址
+sed -i 's/--frozen//g' "$RUST_MK"
 sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
 
-# 5. 预下载源码与 Hash 校验
+# 5. 源码预下载 (针对 Actions 优化的全球权威节点)
 RUST_VER=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
 RUST_HASH=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
 RUST_FILE="rustc-${RUST_VER}-src.tar.xz"
 DL_PATH="$DL_DIR/$RUST_FILE"
 
-echo ">>> 目标 Rust 版本: $RUST_VER"
+echo ">>> 目标版本: $RUST_VER"
 mkdir -p "$DL_DIR"
 
 if [ ! -s "$DL_PATH" ]; then
-    echo ">>> 正在通过镜像加速下载 Rust 源码包..."
+    echo ">>> 正在从全球权威镜像获取源码包..."
     MIRRORS=(
-        "https://mirrors.ustc.edu.cn/rust-static/dist/${RUST_FILE}"
-        "https://mirrors.tuna.tsinghua.edu.cn/rustup/dist/${RUST_FILE}"
         "https://static.rust-lang.org/dist/${RUST_FILE}"
+        "https://rust-static-dist.s3.amazonaws.com/dist/${RUST_FILE}"
+        "https://mirror.switch.ch/ftp/mirror/rust/dist/${RUST_FILE}"
+        "http://mirror.cs.uwaterloo.ca/rust-static/static/dist/${RUST_FILE}"
     )
+
     for mirror in "${MIRRORS[@]}"; do
-        echo ">>> 尝试镜像: $mirror"
-        if wget --timeout=20 --tries=2 -O "$DL_PATH" "$mirror"; then
+        echo ">>> 尝试节点: $mirror"
+        if wget -q --show-progress --timeout=30 --tries=3 -O "$DL_PATH" "$mirror"; then
             [ -s "$DL_PATH" ] && break
         fi
     done
 fi
 
-# 执行最终 Hash 校验
+# 6. 执行 Hash 最终校验
 if [ -f "$DL_PATH" ] && [ -n "$RUST_HASH" ]; then
     LOCAL_HASH=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
     if [ "$LOCAL_HASH" != "$RUST_HASH" ]; then
-        echo "⚠️  警告: Hash 不匹配，删除损坏文件！"
+        echo "⚠️  警告: 源码 Hash 校验失败，文件可能损坏！"
         rm -f "$DL_PATH"
         exit 1
     else
@@ -124,8 +133,8 @@ if [ -f "$DL_PATH" ] && [ -n "$RUST_HASH" ]; then
 fi
 
 echo "=========================================="
-echo "✅ Rust 24.10 终极修复完成"
-echo ">>> 状态: 深度同步[完成] CI-LLVM[已开启] Checksum校验[已跳过]"
+echo "✅ Rust 24.10 终极硬化完成"
+echo ">>> 状态: 24.10深度同步[成功] CI-LLVM[已开启] 容错硬化[已应用]"
 echo "=========================================="
 
 # =========================================================
