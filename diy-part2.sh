@@ -257,27 +257,29 @@ fi
 echo ">>> 正在搜索并修改 ksmbd (网络共享) 菜单归类..."
 
 # 在 feeds 目录下搜索包含 ksmbd 菜单路径的文件
-# 通常路径在 feeds/luci/applications/luci-app-ksmbd 内
+# 范围限定在 luci-app-ksmbd 插件目录内
 KSMBD_FILES=$(grep -rl "admin/services/ksmbd" "$OPENWRT_ROOT/feeds/luci/applications/luci-app-ksmbd" 2>/dev/null)
 
 if [ -n "$KSMBD_FILES" ]; then
     for file in $KSMBD_FILES; do
-        # 同样排除 acl.d 权限定义文件
+        # 排除 acl.d 权限定义文件，防止改错导致权限报错
         if [[ "$file" == *"acl.d"* ]]; then
             continue
         fi
 
         echo "✅ 发现 ksmbd 菜单定义: $file"
-        # 替换路径：从服务(services) 移动到 NAS(nas)
+        
+        # 1. 替换路径定义：从服务(services) 移动到 NAS(nas)
         sed -i 's|admin/services/ksmbd|admin/nas/ksmbd|g' "$file"
         
-        # 兼容性替换：部分版本使用 parent 字段定义
-        sed -i 's/"parent": "luci.services"/"parent": "luci.vpn"/g' "$file" # 这里如果是想去NAS，应该改为 luci.nas
-        sed -i 's|"parent": "luci.services"|"parent": "luci.nas"|g' "$file"
+        # 2. 替换父级分类定义 (JSON 风格)
+        # 统一处理单引号和双引号的情况，确保归类到 luci.nas
+        sed -i 's/"parent": "luci.services"/"parent": "luci.nas"/g' "$file"
+        sed -i "s/'parent': 'luci.services'/'parent': 'luci.nas'/g" "$file"
     done
-    echo "✅ ksmbd 菜单位置修改尝试完成"
+    echo "✅ ksmbd 菜单位置修改完成。"
 else
-    echo "⚠️ 警告: 未能在指定目录下找到 ksmbd 菜单定义，可能路径不同。"
+    echo "⚠️ 警告: 未能在 feeds 中找到 ksmbd 菜单定义。"
 fi
 
 # 自定义默认网关，后方的192.168.30.1即是可自定义的部分
