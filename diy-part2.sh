@@ -181,41 +181,6 @@ if [ -f "$DM_MAKEFILE" ]; then
     echo "✅ DiskMan fix applied."
 fi
 
-# =========================================================
-# 强制修改默认主题为 Argon (彻底移除 Bootstrap)
-# =========================================================
-
-echo ">>> 开始强制替换默认主题为 luci-theme-argon..."
-
-# 1. 修正 collections/luci 中的硬依赖
-# 将 Makefile 中依赖的 luci-theme-bootstrap 替换为 luci-theme-argon
-find "$OPENWRT_ROOT/feeds/luci/collections/" -type f -name "Makefile" -exec sed -i 's/+luci-theme-bootstrap/+luci-theme-argon/g' {} +
-
-# 2. 修改 luci-base 的默认主题配置
-# 这一步是为了防止系统启动时去找 bootstrap 的路径
-LUCI_BASE_CONFIG="$OPENWRT_ROOT/feeds/luci/modules/luci-base/root/etc/config/luci"
-if [ -f "$LUCI_BASE_CONFIG" ]; then
-    sed -i 's/bootstrap/argon/g' "$LUCI_BASE_CONFIG"
-    echo "✅ luci-base 默认配置已指向 argon"
-fi
-
-# 3. 修改系统初始化时的默认主题 (uci-defaults)
-# 搜索所有包含 bootstrap 路径的默认设置并替换为 argon
-find "$OPENWRT_ROOT/feeds/luci/themes/" -type f -name "*_luci-theme-bootstrap" -exec sed -i 's/bootstrap/argon/g' {} +
-
-# 4. 删除 Bootstrap 源码文件夹 (可选，如果你怕依赖报错可以不删，但上面的步骤会确保它不被选中)
-# 建议：如果不删除，可以确保编译不报错，但生成的固件里不会包含它。
-# 如果非要删除，必须清理 tmp 目录
-rm -rf "$OPENWRT_ROOT/feeds/luci/themes/luci-theme-bootstrap"
-
-# 5. 【关键】强制在 .config 层面禁用 Bootstrap
-# 即使你在 menuconfig 选了，这里也会在最后阶段将其强制关闭
-[ -f "$OPENWRT_ROOT/.config" ] && sed -i '/CONFIG_PACKAGE_luci-theme-bootstrap=y/d' "$OPENWRT_ROOT/.config"
-echo "CONFIG_PACKAGE_luci-theme-bootstrap=n" >> "$OPENWRT_ROOT/.config"
-echo "CONFIG_PACKAGE_luci-theme-argon=y" >> "$OPENWRT_ROOT/.config"
-
-echo "✅ 默认主题修改完成：Argon 现在是唯一的默认选项。"
-
 # 修复 libxcrypt 编译报错
 # 给 configure 脚本添加 --disable-werror 参数，忽略警告
 sed -i 's/CONFIGURE_ARGS +=/CONFIGURE_ARGS += --disable-werror/' feeds/packages/libs/libxcrypt/Makefile
