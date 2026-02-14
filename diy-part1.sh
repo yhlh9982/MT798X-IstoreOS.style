@@ -38,3 +38,7 @@ git clone --depth=1 https://github.com/eamonxg/luci-theme-aurora package/aurora
 git clone --depth=1 https://github.com/eamonxg/luci-app-aurora-config package/aurora-config
 git clone --depth=1 https://github.com/sirpdboy/luci-theme-kucat package/kucat
 git clone --depth=1 -b master https://github.com/sirpdboy/luci-app-kucat-config package/kucat-config
+
+# 替换golang到1.24.x
+rm -rf feeds/packages/lang/golang
+git clone -b 24.x --single-branch https://github.com/sbwml/packages_lang_golang feeds/packages/lang/golang
