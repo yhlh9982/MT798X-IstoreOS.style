@@ -20,7 +20,7 @@ env:
   # 自定义脚本 1 (在更新 feeds 之前运行)
   DIY_P1_SH: diy-part1.sh
   # 自定义脚本 3 (在更新 feeds 之后运行)
-  DIY_P2_SH: diy-part3.sh
+  DIY_P3_SH: diy-part3.sh
   # 上传 bin 目录 (包含所有 ipk)
   UPLOAD_BIN_DIR: true
   # 上传固件目录 (包含 img/bin)
