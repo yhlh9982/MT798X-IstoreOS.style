@@ -220,6 +220,10 @@ echo "✅ 默认主题修改完成：Argon 现在是唯一的默认选项。"
 # 给 configure 脚本添加 --disable-werror 参数，忽略警告
 sed -i 's/CONFIGURE_ARGS +=/CONFIGURE_ARGS += --disable-werror/' feeds/packages/libs/libxcrypt/Makefile
 
+# 替换golang到1.24.x
+rm -rf feeds/packages/lang/golang
+git clone -b 24.x --single-branch https://github.com/sbwml/packages_lang_golang feeds/packages/lang/golang
+
 # =========================================================
 # 终极修改 Tailscale 菜单归类 (内容追踪版)
 # =========================================================
