@@ -11,8 +11,6 @@ env:
   DEVICE_NAME: mt7981-2102
   # 源码仓库地址
   REPO_URL: https://github.com/hanwckf/immortalwrt-mt798x
-  #REPO_URL: https://github.com/dailook/immortalwrt-mt798x-6.6
-  #REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
   # 源码分支
   REPO_BRANCH: openwrt-21.02
   # Feeds 配置文件名
