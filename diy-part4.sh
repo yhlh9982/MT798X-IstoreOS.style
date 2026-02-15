@@ -16,3 +16,6 @@ git clone --depth=1 https://github.com/selfcan/luci-app-tailscale package/tailsc
 
 # 添加 openwrt 18.06-21.02 插件库
 git clone --depth=1 -b Immortalwrt https://github.com/makebl/openwrt-package  package/openwrt-package
+
+# theme
+git clone --depth=1 -b openwrt-23.05 https://github.com/sbwml/luci-theme-argon package/argon
