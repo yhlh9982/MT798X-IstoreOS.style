@@ -164,10 +164,10 @@ fi
 # libxcrypt 编译报错修复 (忽略警告)
 sed -i 's/CONFIGURE_ARGS +=/CONFIGURE_ARGS += --disable-werror/' feeds/packages/libs/libxcrypt/Makefile
 
-# 升级 Golang 到 1.23.12
+# 升级 Golang 到 1.24.x
 echo ">>> 升级 Golang..."
 rm -rf feeds/packages/lang/golang
-git clone -b 23.x --single-branch https://github.com/sbwml/packages_lang_golang feeds/packages/lang/golang
+git clone -b 24.x --single-branch https://github.com/sbwml/packages_lang_golang feeds/packages/lang/golang
 
 # ---------------------------------------------------------
 # 5. 菜单位置调整 (Tailscale & KSMBD)
