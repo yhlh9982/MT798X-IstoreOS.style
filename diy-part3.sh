@@ -89,14 +89,8 @@ fi
 # libxcrypt 编译报错修复 (忽略警告)
 sed -i 's/CONFIGURE_ARGS +=/CONFIGURE_ARGS += --disable-werror/' feeds/packages/libs/libxcrypt/Makefile
 
-# 修复 Tailscale 编译：移除官方旧版
-# 彻底删除 feeds 里的旧版 Tailscale
-echo "🔧 Removing old Tailscale from feeds..."
-rm -rf feeds/packages/net/tailscale
-# 升级 Golang 到 1.24.x
-echo "🔧 Upgrading Golang..."
-rm -rf feeds/packages/lang/golang
-git clone https://github.com/sbwml/packages_lang_golang -b 24.x feeds/packages/lang/golang
+# 添加 Tailscale 编译
+git clone --depth=1 https://github.com/selfcan/luci-app-tailscale package/tailscale
 
 # 替换smartdns
 WORKINGDIR="`pwd`/feeds/packages/net/smartdns"
