@@ -80,7 +80,7 @@ if [ -n "$KSMBD_FILES" ]; then
 fi
 
 # 添加 openwrt 18.06-21.02-22.03插件库
-git clone --depth=1 -b Immortalwrt https://github.com/shidahuilang/openwrt-package  package/openwrt1package
+git clone --depth=1 -b Immortalwrt https://github.com/makebl/openwrt-package  package/openwrt1package
 
 # ----------------------------------------------------------------
 # 6. 【最关键一步】强制重新注册所有 Feeds
