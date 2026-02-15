@@ -11,8 +11,8 @@
 #
 
 # 功能插件
-git clone --depth=1 https://github.com/iv7777/luci-app-authshield package/authshield
 git clone --depth=1 https://github.com/selfcan/luci-app-tailscale package/tailscale
+git clone --depth=1 https://github.com/iv7777/luci-app-authshield package/authshield
 
 # 添加 openwrt 18.06-21.02 插件库
 git clone --depth=1 -b Immortalwrt https://github.com/makebl/openwrt-package  package/openwrt-package
