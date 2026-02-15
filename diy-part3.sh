@@ -36,10 +36,10 @@ fi
 # ----------------------------------------------------------------
 # 2. 处理 Rust (21.02 虽然老，但如果要编 Rust 还是得小心)
 # ----------------------------------------------------------------
-# Hanwckf 21.02 的 feeds 可能比较杂，稳妥起见，把 rust 替换为 immortalwrt 23.05 的稳定版
+# Hanwckf 21.02 的 feeds 可能比较杂，稳妥起见，把 rust 替换为 openwrt 23.05 的稳定版
 echo "🔧 Fixing Rust environment..."
 rm -rf feeds/packages/lang/rust
-git clone --depth 1 -b openwrt-23.05 https://github.com/immortalwrt/packages.git /tmp/immortalwrt_packages
+git clone --depth 1 -b openwrt-23.05 https://github.com/openwrt/packages.git /tmp/immortalwrt_packages
 cp -r /tmp/immortalwrt_packages/lang/rust feeds/packages/lang/
 rm -rf /tmp/immortalwrt_packages
 
