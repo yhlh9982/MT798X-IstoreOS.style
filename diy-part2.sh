@@ -33,14 +33,90 @@ else
     fi
 fi
 
-# ----------------------------------------------------------------
-# 3. 处理 Rust 
-# ----------------------------------------------------------------
-echo "🔧 Fixing Rust environment..."
-rm -rf feeds/packages/lang/rust
-git clone --depth 1 -b openwrt-23.05 https://github.com/immortalwrt/packages.git /tmp/immortalwrt_packages
-cp -r /tmp/immortalwrt_packages/lang/rust feeds/packages/lang/
-rm -rf /tmp/immortalwrt_packages
+# ---------------------------------------------------------
+# 2. Rust 编译环境深度修复 (针对 24.10/Master 分支)
+# ---------------------------------------------------------
+echo ">>> 开始执行 Rust 环境深度优化..."
+
+RUST_DIR="$OPENWRT_ROOT/feeds/packages/lang/rust"
+RUST_MK="$RUST_DIR/Makefile"
+DL_DIR="$OPENWRT_ROOT/dl"
+
+# 2.1 清理旧环境
+rm -rf "$RUST_DIR"
+rm -rf "$OPENWRT_ROOT/build_dir/host/rustc-*"
+rm -rf "$OPENWRT_ROOT/build_dir/target-*/host/rustc-*"
+rm -rf "$OPENWRT_ROOT/dl/cargo/registry/index/*"
+
+# 2.2 从 OpenWrt 官方 24.10 分支同步最新的 Rust 定义
+# (官方源通常修复了下载链接问题，比 ImmortalWrt 自带的更及时)
+mkdir -p "$RUST_DIR"
+TEMP_REPO="/tmp/openwrt_pkg_rust"
+rm -rf "$TEMP_REPO"
+
+if git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/packages.git "$TEMP_REPO"; then
+    cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
+    rm -rf "$TEMP_REPO"
+    echo "✅ 已同步官方 24.10 Rust 定义"
+else
+    echo "❌ 错误: 无法同步官方 Rust 源码，将使用本地默认版本尝试..."
+fi
+
+if [ -f "$RUST_MK" ]; then
+    # 2.3 Makefile 手术刀式修改 (核心修复逻辑)
+    
+    # A. 强制开启 CI-LLVM 下载 (避免本地编译 LLVM 耗时数小时)
+    sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
+    sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
+
+    # B. 注入清理命令：打补丁后删除备份文件，防止 Cargo 校验失败
+    sed -i '/Build\/Patch/a \	find $(HOST_BUILD_DIR) -name "*.orig" -delete\n	find $(HOST_BUILD_DIR) -name "*.rej" -delete' "$RUST_MK"
+
+    # C. 注入清理命令：编译前删除 vendor 目录下的校验文件 (解决 checksum mismatch)
+    sed -i '/\$(PYTHON3) \$(HOST_BUILD_DIR)\/x.py/i \	find $(HOST_BUILD_DIR)/vendor -name .cargo-checksum.json -delete' "$RUST_MK"
+
+    # D. 禁用增量编译以节省内存
+    sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_PROFILE_RELEASE_INCREMENTAL=false\nexport CARGO_INCREMENTAL=0' "$RUST_MK"
+
+    # E. 限制并行任务数 (防止 OOM)
+    sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$RUST_MK"
+
+    # F. 修正下载源地址为官方静态源
+    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
+    
+    echo "✅ Rust Makefile 补丁应用完成"
+
+    # 2.4 源码预下载 (加速并验证)
+    RUST_VER=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+    RUST_HASH=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+    RUST_FILE="rustc-${RUST_VER}-src.tar.xz"
+    DL_PATH="$DL_DIR/$RUST_FILE"
+    
+    mkdir -p "$DL_DIR"
+    if [ ! -s "$DL_PATH" ]; then
+        echo ">>> 正在预下载 Rust $RUST_VER 源码..."
+        MIRRORS=(
+            "https://static.rust-lang.org/dist/${RUST_FILE}"
+            "https://rust-static-dist.s3.amazonaws.com/dist/${RUST_FILE}"
+        )
+        for mirror in "${MIRRORS[@]}"; do
+            if wget -q --show-progress --timeout=30 --tries=3 -O "$DL_PATH" "$mirror"; then
+                [ -s "$DL_PATH" ] && echo "下载成功: $mirror" && break
+            fi
+        done
+    fi
+    
+    # 简单的 Hash 检查
+    if [ -f "$DL_PATH" ] && [ -n "$RUST_HASH" ]; then
+        LOCAL_HASH=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
+        if [ "$LOCAL_HASH" != "$RUST_HASH" ]; then
+            echo "⚠️ 警告: 源码 Hash 校验失败，尝试删除重下..."
+            rm -f "$DL_PATH"
+        fi
+    fi
+else
+    echo "❌ 严重错误: Rust Makefile 未找到，Rust 编译可能失败！"
+fi
 
 # ---------------------------------------------------------
 # 3. QuickStart 首页温度显示修复
