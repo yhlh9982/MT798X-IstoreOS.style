@@ -33,47 +33,15 @@ else
     fi
 fi
 
-echo "=========================================="
-echo "DIY Part 2: 同步 ImmortalWrt Rust 版本"
-echo "=========================================="
-# 获取官方配置
-echo ">>> 获取 ImmortalWrt openwrt-23.05 Rust 配置..."
-OFFICIAL_URL="https://raw.githubusercontent.com/openwrt/packages/openwrt-23.05/lang/rust/Makefile"
-TMP_FILE="/tmp/rust_official.mk"
-
-curl -fsSL "$OFFICIAL_URL" -o "$TMP_FILE"
-
-# 提取版本和哈希
-OFFICIAL_VER=$(grep '^PKG_VERSION:=' "$TMP_FILE" | cut -d'=' -f2 | tr -d ' ')
-OFFICIAL_HASH=$(grep '^PKG_HASH:=' "$TMP_FILE" | cut -d'=' -f2 | tr -d ' ')
-
-echo "官方版本: $OFFICIAL_VER"
-echo "官方哈希: $OFFICIAL_HASH"
-
-# 直接替换本地 Makefile
-LOCAL_MK="feeds/packages/lang/rust/Makefile"
-
-if [ -f "$LOCAL_MK" ]; then
-    cp "$LOCAL_MK" "$LOCAL_MK.bak"
-    
-    # 替换版本号和哈希
-    sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$OFFICIAL_VER/" "$LOCAL_MK"
-    sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$OFFICIAL_HASH/" "$LOCAL_MK"
-    
-    # 修复 URL 空格问题（如果有）
-    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$LOCAL_MK"
-    
-    echo "✅ 已替换为官方版本: $OFFICIAL_VER"
-    grep -E '^(PKG_VERSION|PKG_HASH):=' "$LOCAL_MK"
-else
-    echo "❌ 错误: 找不到 $LOCAL_MK"
-    exit 1
-fi
-
-# 清理
-rm -f "$TMP_FILE"
-
-echo "=========================================="
+# ----------------------------------------------------------------
+# 2. 处理 Rust (21.02 虽然老，但如果要编 Rust 还是得小心)
+# ----------------------------------------------------------------
+# Hanwckf 21.02 的 feeds 可能比较杂，稳妥起见，把 rust 替换为 immortalwrt 23.05 的稳定版
+echo "🔧 Fixing Rust environment..."
+rm -rf feeds/packages/lang/rust
+git clone --depth 1 -b openwrt-23.05 https://github.com/immortalwrt/packages.git /tmp/immortalwrt_packages
+cp -r /tmp/immortalwrt_packages/lang/rust feeds/packages/lang/
+rm -rf /tmp/immortalwrt_packages
 
 # ---------------------------------------------------------
 # 3. QuickStart 首页温度显示修复
