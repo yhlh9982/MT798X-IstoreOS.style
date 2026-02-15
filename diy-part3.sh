@@ -76,16 +76,6 @@ if [ -n "$KSMBD_FILES" ]; then
     echo "✅ KSMBD 菜单已移动到 NAS"
 fi
 
-# ----------------------------------------------------------------
-# 4. 【最关键一步】强制重新注册所有 Feeds
-# ----------------------------------------------------------------
-# 这一步将修复 "does not exist" 的错误
-echo "🔄 Re-installing all feeds..."
-./scripts/feeds update -i
-./scripts/feeds install -a -f
-
-echo "🎉 DIY Part 2 Finished!"
-
 # 修改默认 IP (192.168.30.1)
 sed -i 's/192.168.1.1/192.168.30.1/g' package/base-files/files/bin/config_generate
 
