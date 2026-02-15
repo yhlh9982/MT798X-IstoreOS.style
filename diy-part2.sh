@@ -164,6 +164,35 @@ fi
 # libxcrypt 编译报错修复 (忽略警告)
 sed -i 's/CONFIGURE_ARGS +=/CONFIGURE_ARGS += --disable-werror/' feeds/packages/libs/libxcrypt/Makefile
 
+# 修复 Tailscale 编译：移除官方旧版
+# 彻底删除 feeds 里的旧版 Tailscale
+echo "🔧 Removing old Tailscale from feeds..."
+rm -rf feeds/packages/net/tailscale
+# 升级 Golang 到 1.24.x
+echo "🔧 Upgrading Golang..."
+rm -rf feeds/packages/lang/golang
+git clone https://github.com/sbwml/packages_lang_golang -b 24.x feeds/packages/lang/golang
+
+# 替换smartdns
+WORKINGDIR="`pwd`/feeds/packages/net/smartdns"
+mkdir $WORKINGDIR -p
+rm $WORKINGDIR/* -fr
+wget https://github.com/pymumu/openwrt-smartdns/archive/master.zip -O $WORKINGDIR/master.zip
+unzip $WORKINGDIR/master.zip -d $WORKINGDIR
+mv $WORKINGDIR/openwrt-smartdns-master/* $WORKINGDIR/
+rmdir $WORKINGDIR/openwrt-smartdns-master
+rm $WORKINGDIR/master.zip
+
+LUCIBRANCH="master" #更换此变量
+WORKINGDIR="`pwd`/feeds/luci/applications/luci-app-smartdns"
+mkdir $WORKINGDIR -p
+rm $WORKINGDIR/* -fr
+wget https://github.com/pymumu/luci-app-smartdns/archive/${LUCIBRANCH}.zip -O $WORKINGDIR/${LUCIBRANCH}.zip
+unzip $WORKINGDIR/${LUCIBRANCH}.zip -d $WORKINGDIR
+mv $WORKINGDIR/luci-app-smartdns-${LUCIBRANCH}/* $WORKINGDIR/
+rmdir $WORKINGDIR/luci-app-smartdns-${LUCIBRANCH}
+rm $WORKINGDIR/${LUCIBRANCH}.zip
+
 # ---------------------------------------------------------
 # 5. 菜单位置调整 (Tailscale & KSMBD)
 # ---------------------------------------------------------
