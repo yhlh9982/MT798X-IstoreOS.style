@@ -11,8 +11,7 @@
 #
 
 # 功能插件
-# git clone --depth=1 https://github.com/asvow/luci-app-tailscale package/tailscale
-git clone --depth=1 https://github.com/Tokisaki-Galaxy/luci-app-tailscale-community package/tailscale
+git clone --depth=1 https://github.com/asvow/luci-app-tailscale package/tailscale
 
 # 添加 openwrt 18.06-21.02 插件库
 git clone --depth=1 -b Immortalwrt https://github.com/makebl/openwrt-package  package/openwrt-package
