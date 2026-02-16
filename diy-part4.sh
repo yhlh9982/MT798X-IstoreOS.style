@@ -10,10 +10,6 @@
 # See /LICENSE for more information.
 #
 
-# 换更新 go
-rm -rf feeds/packages/lang/golang
-git clone https://github.com/sbwml/packages_lang_golang -b 24.x feeds/packages/lang/golang
-
 # 功能插件
 git clone --depth=1 https://github.com/iv7777/luci-app-authshield package/authshield
 # git clone --depth=1 https://github.com/asvow/luci-app-tailscale package/tailscale
