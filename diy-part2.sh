@@ -236,7 +236,7 @@ echo "🔄 Re-installing all feeds..."
 echo "🎉 DIY Part 2 Finished!"
 
 # 修改默认 IP (192.168.30.1)
-sed -i 's/192.168.1.1/192.168.30.1/g' package/base-files/files/bin/config_generate
+sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
 
 echo "=========================================="
 echo "自定义脚本执行完毕"
