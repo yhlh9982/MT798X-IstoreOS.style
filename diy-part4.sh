@@ -18,9 +18,5 @@ git clone --depth=1 https://github.com/asvow/luci-app-tailscale package/tailscal
 # git clone --depth=1 -b Immortalwrt https://github.com/makebl/openwrt-package  package/openwrt-package
 git clone --depth=1 -b Immortalwrt https://github.com/shidahuilang/openwrt-package  package/openwrt-package
 
-# 换更新 go
-rm -rf feeds/packages/lang/golang
-git clone https://github.com/sbwml/packages_lang_golang -b 24.x feeds/packages/lang/golang
-
 # theme
 git clone --depth=1 -b openwrt-23.05 https://github.com/sbwml/luci-theme-argon package/argon
