@@ -16,8 +16,9 @@ git clone --depth=1 https://github.com/asvow/luci-app-tailscale package/tailscal
 
 # 添加 openwrt 18.06-21.02 插件库
 # git clone --depth=1 -b Immortalwrt https://github.com/makebl/openwrt-package  package/openwrt-package
+# git clone --depth=1 -b Immortalwrt https://github.com/shidahuilang/openwrt-package  package/openwrt-package
 
-#替换更新go
+# 换更新 go
 rm -rf feeds/packages/lang/golang
 git clone https://github.com/sbwml/packages_lang_golang -b 24.x feeds/packages/lang/golang
 
