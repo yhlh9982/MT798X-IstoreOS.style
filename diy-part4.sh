@@ -23,4 +23,4 @@ git clone --depth=1 https://github.com/iv7777/luci-app-authshield package/authsh
 git clone --depth=1 -b Immortalwrt https://github.com/shidahuilang/openwrt-package  package/openwrt-package
 
 # theme
-git clone --depth=1 -b openwrt-23.05 https://github.com/sbwml/luci-theme-argon package/argon
+git clone --depth=1 -b openwrt-22.03 https://github.com/sbwml/luci-theme-argon package/argon
