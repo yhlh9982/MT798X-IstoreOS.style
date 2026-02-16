@@ -76,15 +76,6 @@ if [ -n "$KSMBD_FILES" ]; then
     echo "✅ KSMBD 菜单已移动到 NAS"
 fi
 
-# 升级替换 mosdns
-# find ./ | grep Makefile | grep v2ray-geodata | xargs rm -f
-# find ./ | grep Makefile | grep mosdns | xargs rm -f
-# git clone https://github.com/sbwml/luci-app-mosdns -b v5 package/mosdns
-# git clone https://github.com/sbwml/v2ray-geodata package/v2ray-geodata
-# 换更新 go
-# rm -rf feeds/packages/lang/golang
-# git clone https://github.com/sbwml/packages_lang_golang -b 24.x feeds/packages/lang/golang
-
 # 修改默认 IP (192.168.30.1)
 sed -i 's/192.168.1.1/192.168.30.1/g' package/base-files/files/bin/config_generate
 
