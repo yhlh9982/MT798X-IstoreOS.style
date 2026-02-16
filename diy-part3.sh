@@ -37,8 +37,9 @@ fi
 # 2. 其他组件修复与调整
 # ---------------------------------------------------------
 
-# Rust 编译环境修复方案：替换为 ImmortalWrt 23.05 稳定版
-
+# ----------------------------------------------------------------
+# Rust 编译环境修复方案：替换为 ImmortalWrt 23.05 稳定版 (1.85.0)
+# ----------------------------------------------------------------
 echo "🔧 Fixing Rust environment..."
 
 # 1. 删除当前 feeds 中可能老旧或损坏的 Rust 定义
@@ -55,11 +56,6 @@ git clone --depth 1 -b openwrt-23.05 https://github.com/immortalwrt/packages.git
 mkdir -p feeds/packages/lang
 cp -r /tmp/temp_packages/lang/rust feeds/packages/lang/
 
-# 4. 清理临时文件
-rm -rf /tmp/temp_packages
-
-echo "✅ Rust replaced with version from 23.05 branch!"
-
 # DiskMan 依赖修复
 DM_MAKEFILE=$(find feeds/luci -name "Makefile" | grep "luci-app-diskman")
 if [ -f "$DM_MAKEFILE" ]; then
@@ -69,6 +65,36 @@ fi
 
 # libxcrypt 编译报错修复 (忽略警告)
 sed -i 's/CONFIGURE_ARGS +=/CONFIGURE_ARGS += --disable-werror/' feeds/packages/libs/libxcrypt/Makefile
+
+# 升级替换 mosdns
+find ./ | grep Makefile | grep v2ray-geodata | xargs rm -f
+find ./ | grep Makefile | grep mosdns | xargs rm -f
+git clone https://github.com/sbwml/luci-app-mosdns -b v5 package/mosdns
+git clone https://github.com/sbwml/v2ray-geodata package/v2ray-geodata
+
+# 换更新 go
+rm -rf feeds/packages/lang/golang
+git clone https://github.com/sbwml/packages_lang_golang -b 24.x feeds/packages/lang/golang
+
+# 升级替换 smasrtdns
+WORKINGDIR="`pwd`/feeds/packages/net/smartdns"
+mkdir $WORKINGDIR -p
+rm $WORKINGDIR/* -fr
+wget https://github.com/pymumu/openwrt-smartdns/archive/master.zip -O $WORKINGDIR/master.zip
+unzip $WORKINGDIR/master.zip -d $WORKINGDIR
+mv $WORKINGDIR/openwrt-smartdns-master/* $WORKINGDIR/
+rmdir $WORKINGDIR/openwrt-smartdns-master
+rm $WORKINGDIR/master.zip
+
+LUCIBRANCH="master" #更换此变量
+WORKINGDIR="`pwd`/feeds/luci/applications/luci-app-smartdns"
+mkdir $WORKINGDIR -p
+rm $WORKINGDIR/* -fr
+wget https://github.com/pymumu/luci-app-smartdns/archive/${LUCIBRANCH}.zip -O $WORKINGDIR/${LUCIBRANCH}.zip
+unzip $WORKINGDIR/${LUCIBRANCH}.zip -d $WORKINGDIR
+mv $WORKINGDIR/luci-app-smartdns-${LUCIBRANCH}/* $WORKINGDIR/
+rmdir $WORKINGDIR/luci-app-smartdns-${LUCIBRANCH}
+rm $WORKINGDIR/${LUCIBRANCH}.zip
 
 # ---------------------------------------------------------
 # 3. 菜单位置调整 (Tailscale & KSMBD)
