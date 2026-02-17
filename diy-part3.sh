@@ -37,30 +37,6 @@ fi
 # 2. 其他组件修复与调整
 # ---------------------------------------------------------
 
-# ----------------------------------------------------------------
-# Rust 编译环境修复方案：替换为 ImmortalWrt 23.05 稳定版 (1.85.0)
-# ----------------------------------------------------------------
-echo "🔧 Fixing Rust environment..."
-
-# 1. 删除当前 feeds 中可能老旧或损坏的 Rust 定义
-# (不管原版是哪个版本，直接删掉，防止冲突)
-rm -rf feeds/packages/lang/rust
-
-# 2. 从 ImmortalWrt 23.05 分支拉取稳定版 Rust
-# 选择 23.05 分支是因为它的 Rust 版本(1.85.0)既足够新，又非常稳定，且下载源有效
-echo "   Cloning stable Rust from ImmortalWrt 23.05..."
-git clone --depth 1 -b openwrt-23.05 https://github.com/immortalwrt/packages.git /tmp/temp_packages
-
-# 3. 将下载的 Rust 搬运到当前编译环境
-# 确保目录存在
-mkdir -p feeds/packages/lang
-cp -r /tmp/temp_packages/lang/rust feeds/packages/lang/
-
-# 4. 清理临时文件
-rm -rf /tmp/temp_packages
-
-echo "✅ Rust replaced with version from 23.05 branch!"
-
 # libxcrypt 编译报错修复 (忽略警告)
 sed -i 's/CONFIGURE_ARGS +=/CONFIGURE_ARGS += --disable-werror/' feeds/packages/libs/libxcrypt/Makefile
 
