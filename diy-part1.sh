@@ -31,7 +31,7 @@ git clone --depth=1 https://github.com/sirpdboy/luci-app-taskplan package/taskpl
 git clone --depth=1 https://github.com/iv7777/luci-app-authshield package/authshield
 git clone --depth=1 https://github.com/EasyTier/luci-app-easytier package/easytier
 git clone --depth=1 https://github.com/Tokisaki-Galaxy/luci-app-tailscale-community package/tailscale
-git clone [https://github.com/isalikai/luci-app-owq-wol.git](https://github.com/isalikai/luci-app-owq-wol.git) package/luci-app-owq-wol
+git clone --depth=1 https://github.com/isalikai/luci-app-owq-wol package/luci-app-owq-wol
 
 # 主题
 git clone --depth=1 -b openwrt-24.10 https://github.com/sbwml/luci-theme-argon package/argon
