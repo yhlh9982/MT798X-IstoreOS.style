@@ -8,7 +8,7 @@
 # Description: Build OpenWrt using GitHub Actions
 #
 ###############手动修改##############
-name: hanwckf-CLX-S20P
+name: hanwckf-clx-s20p
 
 on:
   repository_dispatch:
@@ -65,13 +65,13 @@ on:
 
 env:
   ###############手动修改##############
-  ##手动设置上传时候的打包名称和tag名称UPLOAD_TAG_NAME
-  OPENWRT_NAME: hanwckf-CLX-S20P
+  ##因为是两个设备，所以手动设置上传时候的打包名称和tag名称UPLOAD_TAG_NAME
+  OPENWRT_NAME: hanwckf-clx-s20p
   UPLOAD_TAG_NAME: clx-s20p
   REPO_URL: https://github.com/lgs2007m/immortalwrt-mt798x
   REPO_BRANCH: ${{ github.event.inputs.REPO_BRANCH || 'v7672' }}
   FEEDS_CONF: 21.02/feeds.conf.default
-  CONFIG_FILE: 21.02/mt7986-clx-s20p.config
+  CONFIG_FILE: 21.02/.mtwifi-cfg.config
   DIY_P1_SH: 21.02/diy-part1.sh
   DIY_P2_SH: 21.02/diy-part2.sh
   SSH_ACTIONS: false
@@ -94,9 +94,8 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
         sudo -E apt-get -yqq update
-        sudo -E apt-get -yqq install curl dos2unix python3-netifaces libfuse-dev
         sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
         sudo -E apt-get -yqq autoremove --purge
         sudo -E apt-get -yqq clean
@@ -163,8 +162,8 @@ jobs:
     - name: 设置WiFi驱动版本
       run: |
         cd openwrt
-        wifi_driver=$(echo "${{ github.event.inputs.WIFI_DRIVER }}" | awk -F'[-]' '{print $1}')
-        firmware=$(echo "${{ github.event.inputs.WIFI_DRIVER }}" | awk -F'fw-' '{print $2}')
+        wifi_driver=$(echo "${{ github.event.inputs.WIFI_DRIVER }}" | sed -E 's/^(v[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+        firmware=$(echo "${{ github.event.inputs.WIFI_DRIVER }}" | sed -E 's/.*fw-([0-9]{8}|default).*/\1/g')
         echo "Use WiFi Driver: $wifi_driver-fw-$firmware"
         version_num=$(echo "$wifi_driver" | sed 's/v//;s/\.//g')
         sed -i "s/^\(CONFIG_MTK_MT_WIFI_DRIVER_VERSION_\)[0-9]\{4\}/\1${version_num}/g" .config
@@ -208,16 +207,13 @@ jobs:
         cd openwrt
         echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 || make -j1 V=s
+        
         sed -n 's/.*lan) ipad=${ipaddr:-"\([0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+\)"} ;;.*/\1/p' package/base-files/files/bin/config_generate | head -n 1 > IP_ADDR
         [ -s IP_ADDR ] && echo "IP_ADDR=$(cat IP_ADDR)" >> $GITHUB_ENV
-        WIFI_VERSION=$(sed -n 's/^CONFIG_MTK_MT_WIFI_DRIVER_VERSION_\([0-9]\+\)=y/\1/p' .config)
-        [ -n "$WIFI_VERSION" ] && echo "WIFI_VERSION=-v$WIFI_VERSION" >> $GITHUB_ENV
-        MT_WIFI_FW=$(sed -nE 's/^CONFIG_MTK_MT_WIFI_(MT798[168])_([0-9]{8})=y/\2/p' .config)
-        if [ -n "$MT_WIFI_FW" ]; then
-                echo "MT_WIFI_FW=-$MT_WIFI_FW" >> $GITHUB_ENV
+        if grep -q 'CONFIG_MTK_MT_WIFI_DRIVER_VERSION_7661=y' .config; then
+                echo "WIFI_VERSION=-v7661" >> $GITHUB_ENV
         else
-                grep -q 'CONFIG_MTK_MT_WIFI_MT798[168]_DEFAULT_FIRMWARE=y' .config && \
-                echo "MT_WIFI_FW=-default" >> $GITHUB_ENV
+                echo "WIFI_VERSION=-v7672" >> $GITHUB_ENV
         fi
         if grep -q 'CONFIG_PACKAGE_mtwifi-cfg=y' .config; then
                 echo "WIFI_INTERFACE=-mtwifi" >> $GITHUB_ENV
@@ -274,7 +270,7 @@ jobs:
         echo "- 使用源码：${{ env.REPO_URL }}" >> release.txt
         echo "- 使用分支：${{ env.REPO_BRANCH }}" >> release.txt
         echo "- 登录地址：${{ env.IP_ADDR }}" >> release.txt
-        echo "- 使用WiFi驱动: mt_wifi${{ env.WIFI_VERSION }}-fw${{ env.MT_WIFI_FW }}" >> release.txt
+        echo "- 使用WiFi驱动${{ github.event.inputs.WIFI_DRIVER }}" >> release.txt
         if [[ "${{ env.WIFI_INTERFACE }}" == '-mtwifi' ]]; then
                 echo "- 使用hanwckf mtwifi-cfg原生luci无线配置工具" >> release.txt
         else
