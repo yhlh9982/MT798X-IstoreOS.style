@@ -17,7 +17,7 @@ env:
   # Feeds 配置文件名
   FEEDS_CONF: feeds.conf.default
   # .config 配置文件名
-  CONFIG_FILE: mt7986-clx-s20p.config
+  CONFIG_FILE: 24.10/mt7986-clx-s20p.config
   # 自定义脚本 1 (在更新 feeds 之前运行)
   DIY_P1_SH: diy-part1.sh
   # 自定义脚本 2 (在更新 feeds 之后运行)
