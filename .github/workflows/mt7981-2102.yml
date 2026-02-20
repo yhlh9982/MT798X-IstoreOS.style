@@ -71,8 +71,8 @@ on:
 env:
   ###############手动修改##############
   ##手动设置上传时候的打包名称和tag名称UPLOAD_TAG_NAME
-  OPENWRT_NAME: hanwckf
-  UPLOAD_TAG_NAME: mt7981-emmc-usb
+  OPENWRT_NAME: hanwckf-mt7981
+  UPLOAD_TAG_NAME: hanwckf-mt7981
   REPO_URL: https://github.com/lgs2007m/immortalwrt-mt798x
   REPO_BRANCH: ${{ github.event.inputs.REPO_BRANCH || 'v7672' }}
   FEEDS_CONF: 21.02/feeds.conf.default
