@@ -10,17 +10,17 @@ env:
   # 设备名称，用于生成发布标签
   DEVICE_NAME: mt7981-2102
   # 源码仓库地址
-  REPO_URL: https://github.com/hanwckf/immortalwrt-mt798x
+  REPO_URL: https://github.com/lgs2007m/immortalwrt-mt798x
   # 源码分支
-  REPO_BRANCH: openwrt-21.02
+  REPO_BRANCH: v7672
   # Feeds 配置文件名
-  FEEDS_CONF: feeds.conf.default
+  FEEDS_CONF: 21.02/feeds.conf.default
   # .config 配置文件名
-  CONFIG_FILE: mt7981-2102.config
+  CONFIG_FILE: 21.02/mt7981-2102.config
   # 自定义脚本 4 (在更新 feeds 之前运行)
-  DIY_P4_SH: diy-part4.sh
+  DIY_P1_SH: 21.02/diy-part1.sh
   # 自定义脚本 3 (在更新 feeds 之后运行)
-  DIY_P3_SH: diy-part3.sh
+  DIY_P2_SH: 21.02/diy-part2.sh
   # 上传 bin 目录 (包含所有 ipk)
   UPLOAD_BIN_DIR: true
   # 上传固件目录 (包含 img/bin)
@@ -116,13 +116,13 @@ jobs:
         git clone $REPO_URL -b $REPO_BRANCH --single-branch openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    # 4. 加载自定义 Feeds (diy-part4.sh)
+    # 4. 加载自定义 Feeds (diy-part1.sh)
     - name: Load custom feeds （加载自定义 Feeds）
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-        chmod +x $DIY_P4_SH
+        chmod +x $DIY_P1_SH
         cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P4_SH
+        $GITHUB_WORKSPACE/$DIY_P1_SH
 
     # 5. 更新并安装 Feeds
     - name: Update feeds （Feeds更新）
@@ -131,14 +131,14 @@ jobs:
     - name: Install feeds （Feeds安装）
       run: cd openwrt && ./scripts/feeds install -a
 
-    # 6. 加载自定义配置 (diy-part3.sh)
-    - name: Load custom configuration （加载自定义配置diy-part3）
+    # 6. 加载自定义配置 (diy-part2.sh)
+    - name: Load custom configuration （加载自定义配置diy-part2）
       run: |
         [ -e files ] && mv files openwrt/files
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_P3_SH
+        chmod +x $DIY_P2_SH
         cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P3_SH
+        $GITHUB_WORKSPACE/$DIY_P2_SH
 
     # 7. SSH 调试 (可选)
     - name: SSH connection to Actions （SSH 调试）
