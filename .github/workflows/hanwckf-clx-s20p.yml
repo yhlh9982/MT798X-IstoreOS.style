@@ -1,13 +1,9 @@
 #
-# Copyright (c) 2019-2020 P3TERX <https://p3terx.com>
+# Copyright (c) 2019-2020 P3TERX <https://p3terx.com >
 #
-# This is free software, licensed under the MIT License.
-# See /LICENSE for more information.
-#
-# https://github.com/P3TERX/Actions-OpenWrt
 # Description: Build OpenWrt using GitHub Actions
 #
-###############手动修改##############
+
 name: hanwckf-clx-s20p
 
 on:
@@ -64,10 +60,8 @@ on:
 #    - cron: 0 16 * * *
 
 env:
-  ###############手动修改##############
-  ##因为是两个设备，所以手动设置上传时候的打包名称和tag名称UPLOAD_TAG_NAME
-  OPENWRT_NAME: hanwckf-clx-s20p
-  UPLOAD_TAG_NAME: clx-s20p
+  # 设备名称，用于生成发布标签
+  DEVICE_NAME: hanwckf-clx-s20p
   REPO_URL: https://github.com/lgs2007m/immortalwrt-mt798x
   REPO_BRANCH: ${{ github.event.inputs.REPO_BRANCH || 'v7672' }}
   FEEDS_CONF: 21.02/feeds.conf.default
@@ -75,7 +69,14 @@ env:
   DIY_P1_SH: 21.02/diy-part1.sh
   DIY_P2_SH: 21.02/diy-part2.sh
   SSH_ACTIONS: false
+  # 上传 bin 目录 (包含所有 ipk)
+  UPLOAD_BIN_DIR: true
+  # 上传固件目录 (包含 img/bin)
   UPLOAD_FIRMWARE: true
+  # 上传到第三方网盘
+  UPLOAD_COWTRANSFER: false
+  UPLOAD_WETRANSFER: false
+  # 发布到 GitHub Releases
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
 
@@ -87,59 +88,94 @@ jobs:
       contents: write
 
     steps:
-    - name: 检查项目分支
+    - name: Checkout
       uses: actions/checkout@main
 
-    - name: 初始化编译环境
+    # 1. 释放编译空间
+    - name: Ultimate Disk Space Cleanup & Maximize Swap
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
-        sudo -E apt-get -yqq update
-        sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
-        sudo -E apt-get -yqq autoremove --purge
-        sudo -E apt-get -yqq clean
-        sudo timedatectl set-timezone "$TZ"
+        # 1. 强力卸载不需要的服务和包 (可释放约 20GB+)
+        echo ">>> Removing large pre-installed software..."
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        sudo rm -rf /usr/local/share/boost
+        sudo rm -rf /usr/lib/jvm
+        
+        # 2. 清理 Docker 镜像和系统缓存
+        echo ">>> Cleaning up Docker and APT..."
+        sudo docker image prune --all --force
+        sudo apt-get update
+        sudo apt-get autoremove -y >/dev/null 2>&1
+        sudo apt-get autoclean -y >/dev/null 2>&1
+        
+        # 3. 动态调整 Swap 空间
+        # 注意：Rust 编译 LLVM 至少需要 10GB+ 的虚拟内存
+        echo ">>> Reconfiguring Swap Space..."
+        sudo swapoff -a
+        sudo rm -f /mnt/swapfile
+        # 在 /mnt 分区创建 12GB 的 Swap 文件（/mnt 空间通常比根目录充裕）
+        sudo fallocate -l 12G /mnt/swapfile
+        sudo chmod 600 /mnt/swapfile
+        sudo mkswap /mnt/swapfile
+        sudo swapon /mnt/swapfile
+        
+        # 4. 检查最终空间状态
+        echo ">>> Final Disk Space Status:"
+        df -h
+        echo ">>> Final Memory/Swap Status:"
+        free -h
+        
+    # 2. 初始化编译环境
+    - name: Initialization Environment （初始化编译环境）
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo -E apt -yqq purge firefox
+        sudo -E apt -yqq update
+        sudo -E apt -yqq full-upgrade
+        sudo -E apt -yqq autoremove --purge
+        sudo -E apt -yqq clean
+        sudo -E timedatectl set-timezone "$TZ"
+        
+        sudo apt -yqq install dos2unix libfuse-dev
+        sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh )'
+        
         sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
+        echo "初始磁盘空间:"
+        df -hT
 
-    - name: 清理磁盘空间(Ubuntu)
-      uses: jlumbroso/free-disk-space@main
-      with:
-        # this might remove tools that are actually needed,
-        # when set to "true" but frees about 6 GB
-        tool-cache: true
-        
-        # all of these default to true, but feel free to set to
-        # "false" if necessary for your workflow
-        android: false
-        dotnet: false
-        haskell: false
-        large-packages: false
-        swap-storage: false
-
-    - name: 下载固件源码
+    # 3. 克隆源码
+    - name: Clone source code （克隆源码）
       working-directory: /workdir
       run: |
         df -hT $PWD
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        git clone $REPO_URL -b $REPO_BRANCH --single-branch openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    - name: 加载feeds.conf.default & DIY_P1_SH
+    # 4. 加载自定义 Feeds (diy-part1.sh)
+    - name: Load custom feeds （加载自定义 Feeds）
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
-    - name: 更新 & 安装 feeds
-      run: |
-        cd openwrt
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
+    # 5. 更新并安装 Feeds
+    - name: Update feeds （Feeds更新）
+      run: cd openwrt && ./scripts/feeds update -a
 
-    - name: 加载config & DIY_P2_SH
+    - name: Install feeds （Feeds安装）
+      run: cd openwrt && ./scripts/feeds install -a
+
+    # 6. 加载自定义配置 (diy-part2.sh)
+    - name: Load custom configuration （加载自定义配置diy-part2）
       run: |
+        [ -e files ] && mv files openwrt/files
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt
@@ -192,12 +228,13 @@ jobs:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
 
-    - name: 下载安装包
+    # 8. 下载软件包
+    - name: Download package （下载软件包）
       id: package
       run: |
         cd openwrt
         make defconfig
-        make download -j$(nproc)
+        make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
@@ -232,65 +269,125 @@ jobs:
       if: (!cancelled())
       run: df -hT
 
-    - name: 整理文件并重命名
+    # 10. 上传 bin 目录 (Artifacts)
+    - name: Upload bin directory （上传 bin 目录）
+      uses: actions/upload-artifact@main
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+      with:
+        name: OpenWrt_bin_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: openwrt/bin
+
+    # 11. 整理固件文件
+    - name: Organize files （整理固件文件）
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
-      run: | 
-        cd openwrt
-        matched_lines=$(grep '^CONFIG_TARGET.*DEVICE_.*=y' .config | grep -v 'PER_DEVICE' | grep -v 'DEVICE_PACKAGES')
-        mapfile -t devices < <(echo "$matched_lines" | sed -n 's/.*DEVICE_\([^=]*\)=y/\1/p')
-        cd bin/targets/*/*
+      run: |
+        cd openwrt/bin/targets/*/*
         rm -rf packages
-        for val in "${devices[@]}"; do
-                echo "Processing device: $val"
-                for file in *"${val}"*; do
-                        if [ -f "$file" ]; then
-                                suffix="${file#*${val}}"
-                                new_name="${{ env.FILE_DATE }}-${{ env.OPENWRT_NAME }}-${val}${{ env.WIFI_VERSION }}${{ env.BUILD_DOCKERMAN }}${suffix}"
-                                mv "$file" "$new_name"
-                                echo "  Renamed: $file -> $new_name"
-                        fi
-                done
-        done
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: 打包上传固件到Actions Artifacts
+    # 12. 上传固件目录 (Artifacts)
+    - name: Upload OpenWrt_firmware directory （上传固件目录）
       uses: actions/upload-artifact@main
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: ${{ env.FILE_DATE }}-${{ env.OPENWRT_NAME }}-${{ env.UPLOAD_TAG_NAME }}${{ env.WIFI_VERSION }}${{ env.BUILD_DOCKERMAN }}
+        name: OpenWrt_firmware_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
 
-    - name: 生成固件Release标签
+    # 13. 上传到 CowTransfer (可选)
+    - name: Upload firmware to cowtransfer
+      id: cowtransfer
+      if: steps.organize.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' && !cancelled()
+      run: |
+        curl -fsSL git.io/file-transfer | sh
+        ./transfer cow --block 2621440 -s -p 64 --no-progress ${FIRMWARE} 2>&1 | tee cowtransfer.log
+        echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
+        echo "url=$(cat cowtransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
+
+    # 14. 上传到 WeTransfer (可选)
+    - name: Upload firmware to WeTransfer
+      id: wetransfer
+      if: steps.organize.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true' && !cancelled()
+      run: |
+        curl -fsSL git.io/file-transfer | sh
+        ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
+        echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep https)"
+        echo "url=$(cat cowtransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
+
+    # 15. 生成发布标签和日志
+    - name: Generate release tag （生成发布标签和日志）
       id: tag
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
+        AUTHOR=$(echo "${{ env.REPO_URL }}" | cut -d'/' -f4)
+        DEVICE_NAME="${{ env.DEVICE_NAME }}"
+        BRANCH="${{ env.REPO_BRANCH }}"
+        BUILD_TIME=$(date +"%Y%m%d-%H%M")
+        
+        RELEASE_TAG="${DEVICE_NAME}-${AUTHOR}-${BRANCH}-${BUILD_TIME}"
+        RELEASE_TAG=$(echo "$RELEASE_TAG" | sed 's/[^a-zA-Z0-9._-]/-/g')
+        
+        echo "release_tag=${RELEASE_TAG}" >> $GITHUB_OUTPUT
+        
         touch release.txt
-        echo "- 使用源码：${{ env.REPO_URL }}" >> release.txt
-        echo "- 使用分支：${{ env.REPO_BRANCH }}" >> release.txt
-        echo "- 登录地址：${{ env.IP_ADDR }}" >> release.txt
-        echo "- 使用WiFi驱动${{ github.event.inputs.WIFI_DRIVER }}" >> release.txt
-        if [[ "${{ env.WIFI_INTERFACE }}" == '-mtwifi' ]]; then
-                echo "- 使用hanwckf mtwifi-cfg原生luci无线配置工具" >> release.txt
-        else
-                echo "- 使用mtk-sdk luci-app-mtk无线配置工具" >> release.txt
+        echo "## 🚀 OpenWrt 自动编译固件" >> release.txt
+        echo "" >> release.txt
+        echo "### 📋 编译信息" >> release.txt
+        echo "| 项目 | 详情 |" >> release.txt
+        echo "|------|------|" >> release.txt
+        echo "| 📱 设备名称 | \`${DEVICE_NAME}\` |" >> release.txt
+        echo "| 👤 源码作者 | \`${AUTHOR}\` |" >> release.txt
+        echo "| 🔗 源码仓库 | ${{ env.REPO_URL }} |" >> release.txt
+        echo "| 🌿 分支版本 | \`${BRANCH}\` |" >> release.txt
+        echo "| ⏰ 编译时间 | $(date '+%Y-%m-%d %H:%M:%S') (Shanghai) |" >> release.txt
+        echo "| 🏷️ 版本标签 | \`${RELEASE_TAG}\` |" >> release.txt
+        echo "" >> release.txt
+        
+        if [ "${{ env.UPLOAD_COWTRANSFER }}" = "true" ] && [ -n "${{ steps.cowtransfer.outputs.url }}" ]; then
+          echo "🔗 **Cowtransfer**: [点击下载](${{ steps.cowtransfer.outputs.url }})" >> release.txt
+          echo "" >> release.txt
         fi
-        if [[ "${{ env.BUILD_DOCKERMAN }}" == '-docker' ]]; then
-                echo "- 已编译luci-app-dockerman" >> release.txt
-        else
-                echo "- 未编译luci-app-dockerman" >> release.txt
+        
+        if [ "${{ env.UPLOAD_WETRANSFER }}" = "true" ] && [ -n "${{ steps.wetransfer.outputs.url }}" ]; then
+          echo "🔗 **WeTransfer**: [点击下载](${{ steps.wetransfer.outputs.url }})" >> release.txt
+          echo "" >> release.txt
         fi
-        echo "release_tag=${{ env.FILE_DATE }}-${{ env.OPENWRT_NAME }}-${{ env.UPLOAD_TAG_NAME }}${{ env.WIFI_VERSION }}${{ env.BUILD_DOCKERMAN }}" >> $GITHUB_OUTPUT
+        
+        echo "---" >> release.txt
+        echo "> ⚠️ **注意**: 请根据自己的机型选择对应的 Factory 或 Sysupgrade 固件" >> release.txt
+        
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: 发布固件至Release
-      uses: softprops/action-gh-release@v2.1.0
+    # 16. 发布到 GitHub Release
+    - name: Upload firmware to release （发布到 GitHub Release）
+      uses: softprops/action-gh-release@v2
       if: steps.tag.outputs.status == 'success' && !cancelled()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        files: ${{ env.FIRMWARE }}/*
-        name: ${{ env.FILE_DATE }}-${{ env.OPENWRT_NAME }}-${{ env.UPLOAD_TAG_NAME }}${{ env.WIFI_VERSION }}${{ env.BUILD_DOCKERMAN }}
         tag_name: ${{ steps.tag.outputs.release_tag }}
         body_path: release.txt
+        files: |
+          ${{ env.FIRMWARE }}/*.bin
+          ${{ env.FIRMWARE }}/*.ipk
+          ${{ env.FIRMWARE }}/*.img.gz
+          ${{ env.FIRMWARE }}/*.manifest
+          ${{ env.FIRMWARE }}/*.tar.gz
+
+    # 17. 清理旧的工作流记录
+    - name: Delete workflow runs （清理旧的工作流记录）
+      uses: GitRML/delete-workflow-runs@main
+      with:
+        retain_days: 1
+        keep_minimum_runs: 10
+
+    # 18. 清理旧的 Release 发布
+    - name: Remove old Releases （清理旧的 Release 发布）
+      uses: dev-drprasad/delete-older-releases@v0.2.1
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      with:
+        keep_latest: 10
+        delete_tags: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
