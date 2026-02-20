@@ -38,11 +38,12 @@ fi
 # ---------------------------------------------------------
 
 # libxcrypt 编译报错修复 (忽略警告)
-sed -i 's/CONFIGURE_ARGS +=/CONFIGURE_ARGS += --disable-werror/' feeds/packages/libs/libxcrypt/Makefile
+# sed -i 's/CONFIGURE_ARGS +=/CONFIGURE_ARGS += --disable-werror/' feeds/packages/libs/libxcrypt/Makefile
 
 # ---------------------------------------------------------
 # 3. 菜单位置调整 (Tailscale & KSMBD)
 # ---------------------------------------------------------
+
 echo ">>> 调整插件菜单位置..."
 
 # 5.1 Tailscale -> VPN
@@ -58,17 +59,3 @@ fi
 
 # 修改默认 IP (192.168.30.1)
 sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
-
-# ----------------------------------------------------------------
-# 5. 【最关键一步】强制重新注册所有 Feeds
-# ----------------------------------------------------------------
-# 这一步将修复 "does not exist" 的错误
-echo "🔄 Re-installing all feeds..."
-./scripts/feeds update -i
-./scripts/feeds install -a -f
-
-echo "🎉 DIY Part 2 Finished!"
-
-echo "=========================================="
-echo "自定义脚本执行完毕"
-echo "=========================================="
