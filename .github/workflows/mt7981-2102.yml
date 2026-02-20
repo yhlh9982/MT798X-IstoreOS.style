@@ -10,9 +10,9 @@ env:
   # 设备名称，用于生成发布标签
   DEVICE_NAME: mt7981-2102
   # 源码仓库地址
-  REPO_URL: https://github.com/lgs2007m/immortalwrt-mt798x
+  REPO_URL: https://github.com/hanwckf/immortalwrt-mt798x
   # 源码分支
-  REPO_BRANCH: v7672
+  REPO_BRANCH: openwrt-21.02
   # Feeds 配置文件名
   FEEDS_CONF: 21.02/feeds.conf.default
   # .config 配置文件名
@@ -139,26 +139,6 @@ jobs:
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
-
-    - name: 设置WiFi驱动版本
-      run: |
-        cd openwrt
-        wifi_driver=$(echo "${{ github.event.inputs.WIFI_DRIVER }}" | sed -E 's/^(v[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-        firmware=$(echo "${{ github.event.inputs.WIFI_DRIVER }}" | sed -E 's/.*fw-([0-9]{8}|default).*/\1/g')
-        echo "Use WiFi Driver: $wifi_driver-fw-$firmware"
-        version_num=$(echo "$wifi_driver" | sed 's/v//;s/\.//g')
-        sed -i "s/^\(CONFIG_MTK_MT_WIFI_DRIVER_VERSION_\)[0-9]\{4\}/\1${version_num}/g" .config
-        [ "$firmware" == "default" ] && firmware="DEFAULT_FIRMWARE"
-        sed -i "s/^\(CONFIG_MTK_MT_WIFI_MT798[168]\)_[0-9]\{8\}=y/\1_${firmware}=y/g" .config
-
-    - name: 使用luci-app-mtk无线配置
-      if: github.event.inputs.APP_MTK == 'true'
-      run: |
-        cd openwrt
-        sed -i 's/CONFIG_PACKAGE_luci-app-mtwifi-cfg=y/CONFIG_PACKAGE_luci-app-mtk=y/g' .config
-        sed -i 's/CONFIG_PACKAGE_luci-i18n-mtwifi-cfg-zh-cn=y/CONFIG_PACKAGE_luci-i18n-mtk-zh-cn=y/g' .config
-        sed -i 's/CONFIG_PACKAGE_mtwifi-cfg=y/CONFIG_PACKAGE_wifi-profile=y/g' .config
-        sed -i 's/CONFIG_PACKAGE_lua-cjson=y/CONFIG_WIFI_NORMAL_SETTING=y/g' .config
 
     # 7. SSH 调试 (可选)
     - name: SSH connection to Actions （SSH 调试）
