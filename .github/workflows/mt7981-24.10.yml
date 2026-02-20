@@ -4,7 +4,7 @@
 # Description: Build OpenWrt using GitHub Actions
 #
 
-name: mt7981-jcg-q30
+name: mt7981-24.10
 
 env:
   # 设备名称，用于生成发布标签
