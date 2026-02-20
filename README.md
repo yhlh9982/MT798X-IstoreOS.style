@@ -1,10 +1,10 @@
 
 
-云编译798x特定机型的istoreos风格固件 （p3terx 2024新版 基于ubuntu22.04）
+云编译798x特定机型的固件 （p3terx 2024新版 基于ubuntu22.04）
 
 路由器型号：
 
-     JCG Q30 / uax3000e / clx s20l / clx s20p
+     wr30u / JCG Q30 / uax3000e / clx s20l / clx s20p
 
 说明：
      
