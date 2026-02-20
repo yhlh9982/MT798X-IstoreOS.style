@@ -25,7 +25,7 @@ on:
       LAN_IP:
         description: 'Set LAN IP Address'
         required: true
-        default: '192.168.30.1'
+        default: '192.168.66.1'
       WIFI_DRIVER:
         description: 'Choose WiFi Driver'
         required: true
@@ -180,8 +180,8 @@ jobs:
       if: github.event.inputs.EEPROM == 'true'
       run: |
         cd openwrt
-        cp $GITHUB_WORKSPACE/MT7981-eMMC-USB-hanwckf/mt79xx_20220907-8b55f5_eeprom.tar.xz dl/mt79xx_20220907-8b55f5.tar.xz
-        cp $GITHUB_WORKSPACE/MT7981-eMMC-USB-hanwckf/mt79xx_20231229-4012a0_eeprom.tar.xz dl/mt79xx_20231229-4012a0.tar.xz
+        cp $GITHUB_WORKSPACE/21.02/mt79xx_20220907-8b55f5_eeprom.tar.xz dl/mt79xx_20220907-8b55f5.tar.xz
+        cp $GITHUB_WORKSPACE/21.02/mt79xx_20231229-4012a0_eeprom.tar.xz dl/mt79xx_20231229-4012a0.tar.xz
 
     - name: 使用luci-app-mtk无线配置
       if: github.event.inputs.APP_MTK == 'true'
