@@ -74,6 +74,7 @@ env:
   CONFIG_FILE: 21.02/mt7981-2102.config
   DIY_P1_SH: 21.02/diy-part1.sh
   DIY_P2_SH: 21.02/diy-part2.sh
+  SSH_ACTIONS: false
   # 上传 bin 目录 (包含所有 ipk)
   UPLOAD_BIN_DIR: true
   # 上传固件目录 (包含 img/bin)
@@ -292,10 +293,6 @@ jobs:
         
         echo "status=success" >> $GITHUB_OUTPUT
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-
-    - name: Check space usage （编译后容量确认）
-      if: (!cancelled())
-      run: df -hT
 
     # 10. 上传 bin 目录 (Artifacts)
     - name: Upload bin directory （上传 bin 目录）
