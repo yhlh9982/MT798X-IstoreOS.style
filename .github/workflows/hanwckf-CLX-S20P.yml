@@ -8,7 +8,7 @@
 # Description: Build OpenWrt using GitHub Actions
 #
 ###############手动修改##############
-name: CLX-S20P-hanwckf
+name: hanwckf-CLX-S20P
 
 on:
   repository_dispatch:
