@@ -8,7 +8,7 @@ name: mt7981-jcg-q30
 
 env:
   # 设备名称，用于生成发布标签
-  DEVICE_NAME: mt7981-jcg-q30
+  DEVICE_NAME: mt7981-24.10
   # 源码仓库地址
   REPO_URL: https://github.com/dailook/immortalwrt-mt798x-6.6
   #REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
@@ -17,7 +17,7 @@ env:
   # Feeds 配置文件名
   FEEDS_CONF: feeds.conf.default
   # .config 配置文件名
-  CONFIG_FILE: mt7981-jcg-q30.config
+  CONFIG_FILE: 24.10/mt7981-24.10.config
   # 自定义脚本 1 (在更新 feeds 之前运行)
   DIY_P1_SH: diy-part1.sh
   # 自定义脚本 2 (在更新 feeds 之后运行)
