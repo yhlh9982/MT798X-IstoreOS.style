@@ -18,6 +18,8 @@ H大源码网址: https://github.com/hanwckf/immortalwrt-mt798x
 
 dailook大佬源码网址: https://github.com/dailook/immortalwrt-mt798x-24.10
 
+21.02分支的脚本参考和借鉴加菲猫大佬的云编译脚本：https://github.com/lgs2007m/Actions-OpenWrt
+
 因为quickstart的首页温度无法显示正常温度读数，原因为/cgi-bin/luci/istore/system/status/ 这个请求没有 cpuTemperature 这个返回值，这个请求是 /usr/lib/lua/luci/controller/istore_backend.lua 在处理的，但 lua 里只是转给了 quickstart 监听的端口，所以核心问题是 istoreos 的 quickstart 不支持这个架构的 CPU 温度获取所以没有输出。使用了地址为：https://gist.github.com/puteulanus/1c180fae6bccd25e57eb6d30b7aa28aa 提供的修复文件：istore_backend.lua。感谢作者的分享。
 
 使用p3terx云编译模板
