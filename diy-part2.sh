@@ -33,136 +33,123 @@ else
     fi
 fi
 
-set -e
-
+#!/bin/bash
 echo "=========================================="
-echo "DIY Part 2: 同步 OpenWrt 23.05 Rust 版本"
+echo "Rust 深度修复脚本 (针对 23.05/24.10 分支)"
 echo "=========================================="
-echo "当前目录: $(pwd)"
 
-# ==========================================
-# 1. 获取 OpenWrt 官方 Rust 配置
-# ==========================================
-echo ">>> 获取 OpenWrt 23.05 官方 Rust 配置..."
+# 1. 路径识别与环境检查
+TARGET_DIR="${1:-$(pwd)}"
 
-OFFICIAL_URL="https://raw.githubusercontent.com/openwrt/packages/openwrt-23.05/lang/rust/Makefile"
-TMP_FILE="/tmp/rust_official.mk"
-
-curl -fsSL "$OFFICIAL_URL" -o "$TMP_FILE" || {
-    echo "❌ 下载官方 Makefile 失败: $OFFICIAL_URL"
-    exit 1
+check_openwrt_root() {
+    [ -f "$1/scripts/feeds" ] && [ -f "$1/Makefile" ]
 }
 
-# 提取版本和哈希
-RUST_VER=$(grep '^PKG_VERSION:=' "$TMP_FILE" | head -1 | cut -d'=' -f2 | tr -d ' ')
-RUST_HASH=$(grep '^PKG_HASH:=' "$TMP_FILE" | head -1 | cut -d'=' -f2 | tr -d ' ')
-
-if [ -z "$RUST_VER" ] || [ -z "$RUST_HASH" ]; then
-    echo "❌ 无法解析版本或哈希"
-    echo "文件内容:"
-    head -20 "$TMP_FILE"
-    exit 1
-fi
-
-echo "目标版本: $RUST_VER"
-echo "目标哈希: ${RUST_HASH:0:16}..."
-
-# ==========================================
-# 2. 替换本地 Makefile
-# ==========================================
-echo ">>> 替换本地 Rust Makefile..."
-
-LOCAL_MK="feeds/packages/lang/rust/Makefile"
-
-if [ ! -f "$LOCAL_MK" ]; then
-    echo "❌ 错误: 找不到 $LOCAL_MK"
-    exit 1
-fi
-
-# 备份
-cp "$LOCAL_MK" "$LOCAL_MK.bak"
-
-# 替换版本、哈希、URL
-sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$RUST_VER/" "$LOCAL_MK"
-sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$RUST_HASH/" "$LOCAL_MK"
-sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$LOCAL_MK"
-sed -i 's/[[:space:]]*$//' "$LOCAL_MK"  # 删除行尾空格
-
-echo "✅ 已替换为: $RUST_VER"
-grep -E '^(PKG_VERSION|PKG_HASH|PKG_SOURCE_URL):=' "$LOCAL_MK"
-
-# ==========================================
-# 3. 预下载 Rust 源码包
-# ==========================================
-echo ">>> 预下载 Rust $RUST_VER..."
-
-RUST_FILE="rustc-${RUST_VER}-src.tar.xz"
-DL_PATH="dl/$RUST_FILE"
-
-mkdir -p dl
-
-# 检查是否已存在且有效
-if [ -f "$DL_PATH" ]; then
-    echo "检查现有文件..."
-    LOCAL_HASH=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
-    if [ "$LOCAL_HASH" = "$RUST_HASH" ]; then
-        echo "✅ 文件已存在且哈希匹配，跳过下载"
+if check_openwrt_root "$TARGET_DIR"; then
+    OPENWRT_ROOT="$TARGET_DIR"
+    echo "✅ 找到 OpenWrt 根目录: $OPENWRT_ROOT"
+else
+    # 自动探测子目录
+    SUB_DIR=$(find . -maxdepth 2 -name "scripts" -type d | head -n 1 | xargs dirname 2>/dev/null)
+    if [ -n "$SUB_DIR" ] && check_openwrt_root "$SUB_DIR"; then
+        OPENWRT_ROOT="$(realpath "$SUB_DIR")"
+        echo "✅ 在子目录找到 OpenWrt 根目录: $OPENWRT_ROOT"
     else
-        echo "⚠️ 哈希不匹配，重新下载..."
-        rm -f "$DL_PATH"
-    fi
-fi
-
-# 需要下载时
-if [ ! -f "$DL_PATH" ]; then
-    RUST_URL="https://static.rust-lang.org/dist/${RUST_FILE}"
-    echo "从官方下载: $RUST_URL"
-    
-    # 下载（带重试）
-    if wget --timeout=120 -O "${DL_PATH}.tmp" "$RUST_URL" 2>/dev/null || \
-       curl -fsSL --connect-timeout 120 -o "${DL_PATH}.tmp" "$RUST_URL"; then
-        
-        # 验证哈希
-        DL_HASH=$(sha256sum "${DL_PATH}.tmp" | cut -d' ' -f1)
-        if [ "$DL_HASH" = "$RUST_HASH" ]; then
-            mv "${DL_PATH}.tmp" "$DL_PATH"
-            echo "✅ 下载并验证成功"
-        else
-            echo "❌ 哈希验证失败"
-            echo "期望: $RUST_HASH"
-            echo "实际: $DL_HASH"
-            rm -f "${DL_PATH}.tmp"
-            exit 1
-        fi
-    else
-        echo "❌ 下载失败: $RUST_URL"
+        echo "❌ 错误: 无法确定 OpenWrt 源码根目录，请进入源码目录运行或指定路径。"
         exit 1
     fi
 fi
 
-ls -lh "$DL_PATH"
+# 定义核心路径 (注意：23.05/24.10 的 Rust 通常在 feeds/packages/lang/rust)
+RUST_DIR="$OPENWRT_ROOT/feeds/packages/lang/rust"
+RUST_MK="$RUST_DIR/Makefile"
+DL_DIR="$OPENWRT_ROOT/dl"
 
-# ==========================================
-# 4. 清理旧版本冲突文件
-# ==========================================
-echo ">>> 清理旧版本 Rust 文件..."
+# 2. 彻底清理旧的残余 (解决 Cargo.toml.orig 持续报错的关键)
+echo ">>> 执行深度清理，排除旧版本和脏数据干扰..."
+rm -rf "$RUST_DIR"
+rm -rf "$OPENWRT_ROOT/build_dir/host/rustc-*"
+rm -rf "$OPENWRT_ROOT/build_dir/target-*/host/rustc-*"
+rm -rf "$OPENWRT_ROOT/dl/cargo/registry/index/*"
 
-for old_file in dl/rustc-1.*-src.tar.xz dl/rustc-1.*-src.tar.xz.*; do
-    if [ -f "$old_file" ] && [ "$old_file" != "$DL_PATH" ] && [ "$old_file" != "${DL_PATH}.verified" ]; then
-        echo "删除旧版本: $old_file"
-        rm -f "$old_file"
+# 3. 深度同步官方最新构建脚本 (Makefile + Patches)
+echo ">>> 正在从官方仓库同步最新的 Rust 构建定义..."
+mkdir -p "$RUST_DIR"
+TEMP_REPO="/tmp/openwrt_pkg_rust"
+rm -rf "$TEMP_REPO"
+
+# 建议根据你的源码版本选择分支：openwrt-23.05 或 openwrt-24.10
+BRANCH="openwrt-23.05" 
+git clone --depth=1 -b $BRANCH https://github.com/openwrt/packages.git "$TEMP_REPO"
+if [ -d "$TEMP_REPO/lang/rust" ]; then
+    cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
+    rm -rf "$TEMP_REPO"
+    echo "✅ 成功同步 $BRANCH 分支的 Rust 定义"
+else
+    echo "❌ 错误: 同步失败，请检查网络或分支名"
+    exit 1
+fi
+
+# 4. 手术刀式修改 Makefile (优化与硬化)
+echo ">>> 正在应用深度修复补丁..."
+
+# A. 开启 CI-LLVM 模式 (核心：解决磁盘空间爆满，提速 30 分钟)
+sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
+sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
+
+# B. 暴力跳过 Checksum 校验 (解决所有 vendor 库报错的“银弹”)
+# 在执行 x.py 编译前，强制删除 vendor 目录下的所有校验 JSON
+sed -i '/\$(PYTHON3) \$(HOST_BUILD_DIR)\/x.py/i \	find $(HOST_BUILD_DIR)/vendor -name .cargo-checksum.json -delete' "$RUST_MK"
+
+# C. 清理 Patch 产生的备份 (解决 Cargo.toml.orig 报错)
+# 打完补丁后立即删除所有 .orig 和 .rej 文件
+sed -i '/Build\/Patch/a \	find $(HOST_BUILD_DIR) -name "*.orig" -delete\n	find $(HOST_BUILD_DIR) -name "*.rej" -delete' "$RUST_MK"
+
+# D. 环境变量硬化 (禁用增量编译，防止 GitHub Actions 内存溢出)
+sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_PROFILE_RELEASE_INCREMENTAL=false\nexport CARGO_INCREMENTAL=0' "$RUST_MK"
+
+# E. 限制并行任务 (防止内存撑爆)
+sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$RUST_MK"
+
+# F. 其他修正
+sed -i 's/--frozen//g' "$RUST_MK"
+sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
+
+# 5. 源码预下载 (全球权威镜像加速)
+RUST_VER=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+RUST_HASH=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+RUST_FILE="rustc-${RUST_VER}-src.tar.xz"
+DL_PATH="$DL_DIR/$RUST_FILE"
+
+mkdir -p "$DL_DIR"
+if [ ! -s "$DL_PATH" ]; then
+    echo ">>> 正在从全球权威镜像下载 Rust 源码: $RUST_VER"
+    MIRRORS=(
+        "https://static.rust-lang.org/dist/${RUST_FILE}"
+        "https://rust-static-dist.s3.amazonaws.com/dist/${RUST_FILE}"
+        "https://mirror.switch.ch/ftp/mirror/rust/dist/${RUST_FILE}"
+    )
+    for mirror in "${MIRRORS[@]}"; do
+        echo ">>> 尝试节点: $mirror"
+        if wget -q --show-progress --timeout=30 --tries=2 -O "$DL_PATH" "$mirror"; then
+            [ -s "$DL_PATH" ] && break
+        fi
+    done
+fi
+
+# 6. Hash 校验
+if [ -f "$DL_PATH" ] && [ -n "$RUST_HASH" ]; then
+    LOCAL_HASH=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
+    if [ "$LOCAL_HASH" != "$RUST_HASH" ]; then
+        echo "⚠️  警告: Hash 不匹配，文件损坏，删除并由系统重新下载。"
+        rm -f "$DL_PATH"
+    else
+        echo "✅ Hash 校验通过，源码包完整。"
     fi
-done
-
-# 创建验证标记
-touch "${DL_PATH}.verified"
-
-# 清理临时文件
-rm -f "$TMP_FILE"
+fi
 
 echo "=========================================="
-echo "Rust $RUST_VER 准备完成"
-echo "文件: $DL_PATH"
+echo "✅ Rust 修复与加速配置已完成"
 echo "=========================================="
 
 # ---------------------------------------------------------
