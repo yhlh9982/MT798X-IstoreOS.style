@@ -76,7 +76,7 @@ env:
   REPO_URL: https://github.com/lgs2007m/immortalwrt-mt798x
   REPO_BRANCH: ${{ github.event.inputs.REPO_BRANCH || 'v7672' }}
   FEEDS_CONF: 21.02/feeds.conf.default
-  CONFIG_FILE: 21.02/.mtwifi-cfg.config
+  CONFIG_FILE: 21.02/mt7981-2102.config
   DIY_P1_SH: 21.02/diy-part1.sh
   DIY_P2_SH: 21.02/diy-part2.sh
   SSH_ACTIONS: false
