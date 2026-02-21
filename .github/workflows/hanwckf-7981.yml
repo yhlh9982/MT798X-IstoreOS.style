@@ -4,7 +4,7 @@
 # Description: Build OpenWrt using GitHub Actions
 #
 
-name: hanwckf-21.02
+name: hanwckf-7981
 
 on:
   repository_dispatch:
@@ -66,7 +66,7 @@ on:
 
 env:
   # 设备名称，用于生成发布标签
-  DEVICE_NAME: hanwckf-21.02
+  DEVICE_NAME: hanwckf-7981
   # 源码仓库地址
   REPO_URL: https://github.com/lgs2007m/immortalwrt-mt798x
   REPO_BRANCH: ${{ github.event.inputs.REPO_BRANCH || 'v7672' }}
