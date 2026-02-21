@@ -34,10 +34,12 @@ else
 fi
 
 echo "=========================================="
-echo "Rust 终极三级救治脚本 (V4.1 稳定版)"
+echo "Rust 修复脚本 (V4.2 强制同步版)"
 echo "=========================================="
 
 # 1. 配置区域
+# ---------------------------------------------------------
+# 强制指定要使用的官方分支（在此修改你想要的分支）
 PKGS_BRANCH="openwrt-23.05"
 PKGS_REPO="https://github.com/openwrt/packages.git"
 
@@ -45,22 +47,17 @@ PKGS_REPO="https://github.com/openwrt/packages.git"
 SOURCE_1="https://static.rust-lang.org/dist"
 SOURCE_2="https://rust-static-dist.s3.amazonaws.com/dist"
 SOURCE_3="https://mirror.switch.ch/ftp/mirror/rust/dist"
+# ---------------------------------------------------------
 
-# 2. 路径识别与环境检查
+# 2. 路径识别
 TARGET_DIR="${1:-$(pwd)}"
 check_openwrt_root() { [ -f "$1/scripts/feeds" ] && [ -f "$1/Makefile" ]; }
 
 if check_openwrt_root "$TARGET_DIR"; then
     OPENWRT_ROOT=$(readlink -f "$TARGET_DIR")
 else
-    # 自动探测子目录
     SUB_DIR=$(find . -maxdepth 2 -name "scripts" -type d | head -n 1 | xargs dirname 2>/dev/null)
-    if [ -n "$SUB_DIR" ] && check_openwrt_root "$SUB_DIR"; then
-        OPENWRT_ROOT=$(readlink -f "$SUB_DIR")
-    else
-        echo "❌ 错误: 未找到 OpenWrt 根目录"
-        exit 1
-    fi
+    [ -n "$SUB_DIR" ] && check_openwrt_root "$SUB_DIR" && OPENWRT_ROOT=$(readlink -f "$SUB_DIR") || { echo "❌ 错误: 未找到 OpenWrt 根目录"; exit 1; }
 fi
 
 RUST_DIR="$OPENWRT_ROOT/feeds/packages/lang/rust"
@@ -70,28 +67,16 @@ mkdir -p "$DL_DIR"
 
 echo "✅ 运行环境: $OPENWRT_ROOT"
 
-# --- 辅助函数：应用硬化优化 (修正了之前的转义错误) ---
+# --- 辅助函数：应用硬化优化 ---
 apply_hardening() {
     local mk=$1
     echo ">>> 正在注入硬化优化 (CI-LLVM, 暴力去校验, -j 2)..."
-    # 1. 开启预编译 LLVM
     sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$mk"
     sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$mk"
-    
-    # 2. 清理补丁残余 (.orig/.rej)
-    # 使用 a\ 并在换行符处正确转义
     sed -i '/Build\/Patch/a \	find $(HOST_BUILD_DIR) -name "*.orig" -delete\n	find $(HOST_BUILD_DIR) -name "*.rej" -delete' "$mk"
-    
-    # 3. 编译前删除 Checksum
     sed -i '/\$(PYTHON3) \$(HOST_BUILD_DIR)\/x.py/i \	find $(HOST_BUILD_DIR)/vendor -name .cargo-checksum.json -delete' "$mk"
-    
-    # 4. 环境变量与内存保护 (修正了 \n 的缺失)
     sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_PROFILE_RELEASE_INCREMENTAL=false\nexport CARGO_INCREMENTAL=0' "$mk"
-    
-    # 5. 限制并行任务
     sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$mk"
-    
-    # 6. 其他修正
     sed -i 's/--frozen//g' "$mk"
     sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$mk"
 }
@@ -103,21 +88,17 @@ consensus_check() {
     local file="rustc-${ver}-src.tar.xz"
     
     echo ">>> 启动三方并发下载: 版本 $ver"
-    # 并发下载，限制超时以防卡死
     wget -q --timeout=30 --tries=2 -O "$DL_DIR/${file}.1" "$SOURCE_1/$file" &
     wget -q --timeout=30 --tries=2 -O "$DL_DIR/${file}.2" "$SOURCE_2/$file" &
     wget -q --timeout=30 --tries=2 -O "$DL_DIR/${file}.3" "$SOURCE_3/$file" &
     wait
 
-    # 获取实际下载文件的哈希
     local h1=$(sha256sum "$DL_DIR/${file}.1" 2>/dev/null | cut -d' ' -f1)
     local h2=$(sha256sum "$DL_DIR/${file}.2" 2>/dev/null | cut -d' ' -f1)
     local h3=$(sha256sum "$DL_DIR/${file}.3" 2>/dev/null | cut -d' ' -f1)
 
-    # 逻辑 1: 匹配当前 Makefile (最理想情况)
     if [ "$h1" == "$expected_h" ] || [ "$h2" == "$expected_h" ] || [ "$h3" == "$expected_h" ]; then
         echo "✅ 级别 1: 发现匹配 Makefile 的权威源码包。"
-        # 移动正确的文件
         [ "$h1" == "$expected_h" ] && mv "$DL_DIR/${file}.1" "$DL_DIR/$file"
         [ "$h2" == "$expected_h" ] && [ ! -f "$DL_DIR/$file" ] && mv "$DL_DIR/${file}.2" "$DL_DIR/$file"
         [ "$h3" == "$expected_h" ] && [ ! -f "$DL_DIR/$file" ] && mv "$DL_DIR/${file}.3" "$DL_DIR/$file"
@@ -125,66 +106,52 @@ consensus_check() {
         return 0
     fi
 
-    # 逻辑 2: 三方一致但与 Makefile 不同 (说明 Makefile 过时了)
-    if [ -z "$h1" ] || [ -z "$h2" ] || [ -z "$h3" ]; then
-        echo "⚠️  部分节点下载失败，无法达成三方共识。"
-    elif [ "$h1" == "$h2" ] && [ "$h2" == "$h3" ]; then
-        echo "⚠️  级别 2: 三方共识哈希一致 ($h1)，正在自动更正 Makefile..."
+    if [ -n "$h1" ] && [ "$h1" == "$h2" ] && [ "$h2" == "$h3" ]; then
+        echo "⚠️  级别 2: 三方一致但与 Makefile 不同，修正哈希为 $h1"
         sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$h1/" "$RUST_MK"
         mv "$DL_DIR/${file}.1" "$DL_DIR/$file"
         rm -f "$DL_DIR/${file}."*
         return 0
     fi
-
-    # 逻辑 3: 全部失败
-    echo "❌ 级别 3: 无法通过当前 Makefile 或三方共识获取源码。"
     rm -f "$DL_DIR/${file}."*
     return 1
 }
 
 # =========================================================
-# 执行流程
+# 强制执行流程：先同步，再下载
 # =========================================================
-SUCCESS=false
 
-# 第一跳：尝试基于当前 Makefile 执行共识校验
+# 第一步：强制同步指定的分支定义（覆盖当前环境已有的 Rust）
+echo "🚨 正在强制同步官方 $PKGS_BRANCH 分支的 Rust 定义..."
+rm -rf "$RUST_DIR"
+mkdir -p "$RUST_DIR"
+# 清理旧的编译残余
+rm -rf "$OPENWRT_ROOT/build_dir/host/rustc-*"
+rm -rf "$OPENWRT_ROOT/build_dir/target-*/host/rustc-*"
+
+TEMP="/tmp/rust_force_sync_$$"
+if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP"; then
+    cp -r "$TEMP/lang/rust/"* "$RUST_DIR/"
+    rm -rf "$TEMP"
+    echo "✅ 分支同步完成。"
+else
+    echo "❌ 错误: 无法连接仓库强制同步。"
+    exit 1
+fi
+
+# 第二步：基于新同步的 Makefile 执行下载校验
 if [ -f "$RUST_MK" ]; then
     V=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
     H=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
     if consensus_check "$V" "$H"; then
-        SUCCESS=true
+        apply_hardening "$RUST_MK"
+        echo "✅ Rust 救治与强制同步优化已全部完成。"
+    else
+        echo "❌ 严重错误: 下载校验失败。"
+        exit 1
     fi
-fi
-
-# 第二跳：深度同步官方救治
-if [ "$SUCCESS" != "true" ]; then
-    echo "🚨 正在执行官方 $PKGS_BRANCH 分支深度同步..."
-    rm -rf "$RUST_DIR"
-    mkdir -p "$RUST_DIR"
-    # 清理旧的编译残余
-    rm -rf "$OPENWRT_ROOT/build_dir/host/rustc-*"
-    
-    TEMP="/tmp/rust_rec_$$"
-    if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP"; then
-        cp -r "$TEMP/lang/rust/"* "$RUST_DIR/"
-        rm -rf "$TEMP"
-        
-        NEW_V=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-        NEW_H=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-        
-        if consensus_check "$NEW_V" "$NEW_H"; then
-            echo "✅ 深度同步后救治成功！"
-            SUCCESS=true
-        fi
-    fi
-fi
-
-# 第三跳：注入优化并结束
-if [ "$SUCCESS" == "true" ]; then
-    apply_hardening "$RUST_MK"
-    echo "✅ Rust 救治与优化已全部完成。"
 else
-    echo "❌ 最终救治失败，Actions 将停止以防无效编译。"
+    echo "❌ 错误: 未能找到 Makefile 文件。"
     exit 1
 fi
 
