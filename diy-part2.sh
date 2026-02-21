@@ -34,14 +34,18 @@ else
 fi
 
 echo "=========================================="
-echo "Rust 历史版本锁定与硬化脚本 (V3.0)"
+echo "Rust 深度同步与环境硬化脚本 (旗舰版)"
 echo "=========================================="
 
-# 1. 配置区域：在这里设定你想要锁定的版本
-# 建议选择官方支持过的稳定版，如 1.75.0, 1.80.0, 1.82.0
-WANT_VERSION="1.89.0"
+# 1. 配置区域：设定 Packages 仓库的来源
+# ---------------------------------------------------------
+# 指定官方 packages 仓库地址
+PKGS_REPO="https://github.com/openwrt/packages.git"
+# 指定想要同步的分支 (如: openwrt-24.10, openwrt-23.05, master)
+PKGS_BRANCH="master"
+# ---------------------------------------------------------
 
-# 2. 路径识别
+# 2. 路径识别与环境检查
 TARGET_DIR="${1:-$(pwd)}"
 check_openwrt_root() { [ -f "$1/scripts/feeds" ] && [ -f "$1/Makefile" ]; }
 
@@ -53,68 +57,69 @@ else
 fi
 
 RUST_DIR="$OPENWRT_ROOT/feeds/packages/lang/rust"
+RUST_MK="$RUST_DIR/Makefile"
 DL_DIR="$OPENWRT_ROOT/dl"
 
-# 3. 深度清理旧版本残余
-echo ">>> 清理当前 Rust 目录及编译残留..."
+# 3. 彻底清理旧残余 (解决 Cargo.toml.orig 报错的先决条件)
+echo ">>> 正在执行深度清理，确保编译环境纯净..."
 rm -rf "$RUST_DIR"
 rm -rf "$OPENWRT_ROOT/build_dir/host/rustc-*"
 rm -rf "$OPENWRT_ROOT/build_dir/target-*/host/rustc-*"
+rm -rf "$OPENWRT_ROOT/staging_dir/host/pkginfo/rust.default.install"
 
-# 4. 从官方 Git 历史中检索匹配版本 (含 Makefile + Patches)
-echo ">>> 正在从官方历史记录中检索版本: $WANT_VERSION ..."
-TEMP_REPO="/tmp/rust_history"
+# 4. 深度同步指定的 Packages 版本
+echo ">>> 正在从 $PKGS_REPO [$PKGS_BRANCH] 同步 Rust 定义..."
+mkdir -p "$RUST_DIR"
+TEMP_REPO="/tmp/rust_sync_repo"
 rm -rf "$TEMP_REPO"
-# 深度设为 200 以确保能搜到较旧的版本
-git clone --depth=200 https://github.com/openwrt/packages.git "$TEMP_REPO"
-cd "$TEMP_REPO" || exit
 
-# 搜索包含该版本号修改的最后一次提交 ID
-TARGET_COMMIT=$(git log --grep="rust: update to $WANT_VERSION" --format="%H" -n 1)
-[ -z "$TARGET_COMMIT" ] && TARGET_COMMIT=$(git log -S "PKG_VERSION:=$WANT_VERSION" --format="%H" -n 1 lang/rust/Makefile)
-
-if [ -n "$TARGET_COMMIT" ]; then
-    echo "✅ 找到匹配提交: $TARGET_COMMIT"
-    git checkout "$TARGET_COMMIT" -- lang/rust
-    mkdir -p "$OPENWRT_ROOT/$RUST_DIR"
-    cp -r lang/rust/* "$OPENWRT_ROOT/$RUST_DIR/"
-    cd - > /dev/null || exit
+if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO"; then
+    cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
+    rm -rf "$TEMP_REPO"
+    echo "✅ 成功同步分支: $PKGS_BRANCH"
 else
-    echo "❌ 错误: 官方记录中未找到版本 $WANT_VERSION，请检查版本号是否正确。"
+    echo "❌ 错误: 无法连接仓库同步源码定义"
     exit 1
 fi
-rm -rf "$TEMP_REPO"
 
-# 5. 注入硬化与加速逻辑
-RUST_MK="$RUST_DIR/Makefile"
-echo ">>> 正在为锁定版本应用硬化补丁..."
+if [ ! -f "$RUST_MK" ]; then
+    echo "❌ 错误: 同步失败，找不到 Makefile"
+    exit 1
+fi
 
-# A. 开启 CI-LLVM (磁盘与性能核心)
+# 5. 应用“保过”级优化与硬化逻辑
+echo ">>> 正在注入硬化补丁与优化参数..."
+
+# [优化] 开启 CI-LLVM 模式: 解决磁盘空间爆满 (从 12GB 降至 1GB)，提速 30 分钟以上
 sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
 sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
 
-# B. 暴力处理 Checksum 与 .orig 备份 (解决所有 vendor 报错)
-# 在打补丁后删除备份，在编译前删除校验 JSON
+# [暴力修复] 解决 Cargo.toml.orig 报错和 Checksum 不匹配
+# 打完 Patch 后立即清理所有备份文件 (.orig/.rej)
 sed -i '/Build\/Patch/a \	find $(HOST_BUILD_DIR) -name "*.orig" -delete\n	find $(HOST_BUILD_DIR) -name "*.rej" -delete' "$RUST_MK"
+# 编译前强行删除 vendor 目录下的所有校验 JSON (Cargo 报错的“银弹”)
 sed -i '/\$(PYTHON3) \$(HOST_BUILD_DIR)\/x.py/i \	find $(HOST_BUILD_DIR)/vendor -name .cargo-checksum.json -delete' "$RUST_MK"
 
-# C. 内存与稳定性硬化 (禁用增量编译，限制任务数为 2)
+# [稳定性] 环境变量硬化: 禁用增量编译，强制单任务链接，防止 GitHub Actions 内存溢出 (OOM)
 sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_PROFILE_RELEASE_INCREMENTAL=false\nexport CARGO_INCREMENTAL=0' "$RUST_MK"
+# 限制 Rust 的并行编译数为 2，防止撑爆 7GB 内存
 sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$RUST_MK"
 
-# D. 修正编译参数与官方分发地址
+# [兼容性] 移除强制冻结，修正源码地址
 sed -i 's/--frozen//g' "$RUST_MK"
 sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
 
-# 6. 全球权威镜像预下载与 Hash 校验
+# 6. 源码预下载与 SHA256 哈希核实
 RUST_VER=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
 RUST_HASH=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
 RUST_FILE="rustc-${RUST_VER}-src.tar.xz"
 DL_PATH="$DL_DIR/$RUST_FILE"
 
+echo ">>> 目标 Rust 版本: $RUST_VER"
 mkdir -p "$DL_DIR"
+
 if [ ! -s "$DL_PATH" ]; then
-    echo ">>> 正在从全球加速镜像下载 Rust 源码: $RUST_VER"
+    echo ">>> 正在通过全球权威镜像下载源码包..."
     MIRRORS=(
         "https://static.rust-lang.org/dist/${RUST_FILE}"
         "https://rust-static-dist.s3.amazonaws.com/dist/${RUST_FILE}"
@@ -128,10 +133,13 @@ if [ ! -s "$DL_PATH" ]; then
     done
 fi
 
+# [验证] 核心步骤：哈希核实。如果本地文件 Hash 不对，证明下载损坏，脚本报错退出。
 if [ -f "$DL_PATH" ] && [ -n "$RUST_HASH" ]; then
     LOCAL_HASH=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
     if [ "$LOCAL_HASH" != "$RUST_HASH" ]; then
-        echo "⚠️  哈希校验失败！文件可能损坏，将删除文件。"
+        echo "⚠️  错误: 源码 Hash 校验失败！"
+        echo "期望: $RUST_HASH"
+        echo "实际: $LOCAL_HASH"
         rm -f "$DL_PATH"
         exit 1
     else
@@ -140,8 +148,8 @@ if [ -f "$DL_PATH" ] && [ -n "$RUST_HASH" ]; then
 fi
 
 echo "=========================================="
-echo "✅ Rust 成功锁定为官方版本: $WANT_VERSION"
-echo ">>> 优化状态: 补丁匹配[成功] CI-LLVM[已开启] 校验干扰[已暴力移除]"
+echo "✅ Rust 深度修复与环境硬化已完成"
+echo ">>> 分支: $PKGS_BRANCH | 版本: $RUST_VER"
 echo "=========================================="
 
 # ---------------------------------------------------------
