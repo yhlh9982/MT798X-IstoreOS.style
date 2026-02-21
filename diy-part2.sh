@@ -42,7 +42,7 @@ echo "=========================================="
 # 指定官方 packages 仓库地址
 PKGS_REPO="https://github.com/openwrt/packages.git"
 # 指定想要同步的分支 (如: openwrt-24.10, openwrt-23.05, master)
-PKGS_BRANCH="master"
+PKGS_BRANCH="openwrt-23.05"
 # ---------------------------------------------------------
 
 # 2. 路径识别与环境检查
