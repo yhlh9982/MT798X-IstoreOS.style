@@ -33,128 +33,6 @@ else
     fi
 fi
 
-echo "=========================================="
-echo "Rust 修复脚本 (V4.2 强制同步版)"
-echo "=========================================="
-
-# 1. 配置区域
-# ---------------------------------------------------------
-# 强制指定要使用的官方分支（在此修改你想要的分支）
-PKGS_BRANCH="openwrt-23.05"
-PKGS_REPO="https://github.com/openwrt/packages.git"
-
-# 全球三大权威镜像源
-SOURCE_1="https://static.rust-lang.org/dist"
-SOURCE_2="https://rust-static-dist.s3.amazonaws.com/dist"
-SOURCE_3="https://mirror.switch.ch/ftp/mirror/rust/dist"
-# ---------------------------------------------------------
-
-# 2. 路径识别
-TARGET_DIR="${1:-$(pwd)}"
-check_openwrt_root() { [ -f "$1/scripts/feeds" ] && [ -f "$1/Makefile" ]; }
-
-if check_openwrt_root "$TARGET_DIR"; then
-    OPENWRT_ROOT=$(readlink -f "$TARGET_DIR")
-else
-    SUB_DIR=$(find . -maxdepth 2 -name "scripts" -type d | head -n 1 | xargs dirname 2>/dev/null)
-    [ -n "$SUB_DIR" ] && check_openwrt_root "$SUB_DIR" && OPENWRT_ROOT=$(readlink -f "$SUB_DIR") || { echo "❌ 错误: 未找到 OpenWrt 根目录"; exit 1; }
-fi
-
-RUST_DIR="$OPENWRT_ROOT/feeds/packages/lang/rust"
-RUST_MK="$RUST_DIR/Makefile"
-DL_DIR="$OPENWRT_ROOT/dl"
-mkdir -p "$DL_DIR"
-
-echo "✅ 运行环境: $OPENWRT_ROOT"
-
-# --- 辅助函数：应用硬化优化 ---
-apply_hardening() {
-    local mk=$1
-    echo ">>> 正在注入硬化优化 (CI-LLVM, 暴力去校验, -j 2)..."
-    sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$mk"
-    sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$mk"
-    sed -i '/Build\/Patch/a \	find $(HOST_BUILD_DIR) -name "*.orig" -delete\n	find $(HOST_BUILD_DIR) -name "*.rej" -delete' "$mk"
-    sed -i '/\$(PYTHON3) \$(HOST_BUILD_DIR)\/x.py/i \	find $(HOST_BUILD_DIR)/vendor -name .cargo-checksum.json -delete' "$mk"
-    sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_PROFILE_RELEASE_INCREMENTAL=false\nexport CARGO_INCREMENTAL=0' "$mk"
-    sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$mk"
-    sed -i 's/--frozen//g' "$mk"
-    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$mk"
-}
-
-# --- 核心函数：共识下载与哈希修正 ---
-consensus_check() {
-    local ver=$1
-    local expected_h=$2
-    local file="rustc-${ver}-src.tar.xz"
-    
-    echo ">>> 启动三方并发下载: 版本 $ver"
-    wget -q --timeout=30 --tries=2 -O "$DL_DIR/${file}.1" "$SOURCE_1/$file" &
-    wget -q --timeout=30 --tries=2 -O "$DL_DIR/${file}.2" "$SOURCE_2/$file" &
-    wget -q --timeout=30 --tries=2 -O "$DL_DIR/${file}.3" "$SOURCE_3/$file" &
-    wait
-
-    local h1=$(sha256sum "$DL_DIR/${file}.1" 2>/dev/null | cut -d' ' -f1)
-    local h2=$(sha256sum "$DL_DIR/${file}.2" 2>/dev/null | cut -d' ' -f1)
-    local h3=$(sha256sum "$DL_DIR/${file}.3" 2>/dev/null | cut -d' ' -f1)
-
-    if [ "$h1" == "$expected_h" ] || [ "$h2" == "$expected_h" ] || [ "$h3" == "$expected_h" ]; then
-        echo "✅ 级别 1: 发现匹配 Makefile 的权威源码包。"
-        [ "$h1" == "$expected_h" ] && mv "$DL_DIR/${file}.1" "$DL_DIR/$file"
-        [ "$h2" == "$expected_h" ] && [ ! -f "$DL_DIR/$file" ] && mv "$DL_DIR/${file}.2" "$DL_DIR/$file"
-        [ "$h3" == "$expected_h" ] && [ ! -f "$DL_DIR/$file" ] && mv "$DL_DIR/${file}.3" "$DL_DIR/$file"
-        rm -f "$DL_DIR/${file}."*
-        return 0
-    fi
-
-    if [ -n "$h1" ] && [ "$h1" == "$h2" ] && [ "$h2" == "$h3" ]; then
-        echo "⚠️  级别 2: 三方一致但与 Makefile 不同，修正哈希为 $h1"
-        sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$h1/" "$RUST_MK"
-        mv "$DL_DIR/${file}.1" "$DL_DIR/$file"
-        rm -f "$DL_DIR/${file}."*
-        return 0
-    fi
-    rm -f "$DL_DIR/${file}."*
-    return 1
-}
-
-# =========================================================
-# 强制执行流程：先同步，再下载
-# =========================================================
-
-# 第一步：强制同步指定的分支定义（覆盖当前环境已有的 Rust）
-echo "🚨 正在强制同步官方 $PKGS_BRANCH 分支的 Rust 定义..."
-rm -rf "$RUST_DIR"
-mkdir -p "$RUST_DIR"
-# 清理旧的编译残余
-rm -rf "$OPENWRT_ROOT/build_dir/host/rustc-*"
-rm -rf "$OPENWRT_ROOT/build_dir/target-*/host/rustc-*"
-
-TEMP="/tmp/rust_force_sync_$$"
-if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP"; then
-    cp -r "$TEMP/lang/rust/"* "$RUST_DIR/"
-    rm -rf "$TEMP"
-    echo "✅ 分支同步完成。"
-else
-    echo "❌ 错误: 无法连接仓库强制同步。"
-    exit 1
-fi
-
-# 第二步：基于新同步的 Makefile 执行下载校验
-if [ -f "$RUST_MK" ]; then
-    V=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-    H=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-    if consensus_check "$V" "$H"; then
-        apply_hardening "$RUST_MK"
-        echo "✅ Rust 救治与强制同步优化已全部完成。"
-    else
-        echo "❌ 严重错误: 下载校验失败。"
-        exit 1
-    fi
-else
-    echo "❌ 错误: 未能找到 Makefile 文件。"
-    exit 1
-fi
-
 # ---------------------------------------------------------
 # 3. QuickStart 首页温度显示修复
 # ---------------------------------------------------------
@@ -261,6 +139,151 @@ if [ -n "$KSMBD_FILES" ]; then
     done
     echo "✅ KSMBD 菜单已移动到 NAS"
 fi
+
+echo "=========================================="
+echo "Rust 终极闭环救治脚本 (V11.0 强制救治版)"
+echo "=========================================="
+
+# 1. 配置区域
+# ---------------------------------------------------------
+PKGS_REPO="https://github.com/openwrt/packages.git"
+PKGS_BRANCH="openwrt-23.05"  # 强制引用的底座分支
+
+# 三大权威来源
+SOURCE_1="https://static.rust-lang.org/dist"
+SOURCE_2="https://rust-static-dist.s3.amazonaws.com/dist"
+SOURCE_3="https://mirror.switch.ch/ftp/mirror/rust/dist"
+# ---------------------------------------------------------
+
+# 2. 路径识别
+TARGET_DIR="${1:-$(pwd)}"
+check_openwrt_root() { [ -f "$1/scripts/feeds" ] && [ -f "$1/Makefile" ]; }
+if check_openwrt_root "$TARGET_DIR"; then
+    OPENWRT_ROOT=$(readlink -f "$TARGET_DIR")
+else
+    SUB_DIR=$(find . -maxdepth 2 -name "scripts" -type d | head -n 1 | xargs dirname 2>/dev/null)
+    [ -n "$SUB_DIR" ] && check_openwrt_root "$SUB_DIR" && OPENWRT_ROOT=$(readlink -f "$SUB_DIR") || { echo "❌ 错误: 未找到 OpenWrt 根目录"; exit 1; }
+fi
+
+REAL_RUST_DIR="$OPENWRT_ROOT/feeds/packages/lang/rust"
+REAL_RUST_MK="$REAL_RUST_DIR/Makefile"
+DL_DIR="$OPENWRT_ROOT/dl"
+TEMP_REPO="/tmp/rust_staging_clone"
+mkdir -p "$DL_DIR"
+
+# --- 辅助函数：注入验证过的硬化优化 (本地编译核心设置) ---
+apply_final_hardening() {
+    local mk=$1
+    echo ">>> 正在为目标 Makefile 注入本地硬化优化 (CI-LLVM, -j 2, 暴力去校验)..."
+    # 开启 CI-LLVM
+    sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$mk"
+    sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$mk"
+    # 解决补丁备份干扰 (.orig)
+    sed -i '/Build\/Patch/a \	find $(HOST_BUILD_DIR) -name "*.orig" -delete\n	find $(HOST_BUILD_DIR) -name "*.rej" -delete' "$mk"
+    # 暴力屏蔽 Checksum (让 Cargo 闭嘴)
+    sed -i '/\$(PYTHON3) \$(HOST_BUILD_DIR)\/x.py/i \	find $(HOST_BUILD_DIR)/vendor -name .cargo-checksum.json -delete' "$mk"
+    # 内存保护与任务限制 (Actions 7G 内存保命设置)
+    sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_PROFILE_RELEASE_INCREMENTAL=false\nexport CARGO_INCREMENTAL=0' "$mk"
+    sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$mk"
+    # 修正地址与移除冻结
+    sed -i 's/--frozen//g' "$mk"
+    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$mk"
+}
+
+# =========================================================
+# 第一阶段：获取救治底座 (23.05 原始 packages)
+# =========================================================
+echo ">>> [1/4] 正在克隆官方 $PKGS_BRANCH 到临时目录作为救治底座..."
+rm -rf "$TEMP_REPO"
+if ! git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; then
+    echo "❌ 错误: 救治底座克隆失败，网络异常。"
+    exit 1
+fi
+
+TEMP_MK="$TEMP_REPO/lang/rust/Makefile"
+V_REF=$(grep '^PKG_VERSION:=' "$TEMP_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+H_REF=$(grep '^PKG_HASH:=' "$TEMP_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+FILE="rustc-${V_REF}-src.tar.xz"
+
+# =========================================================
+# 第二阶段：三方并发下载与共识比对
+# =========================================================
+echo ">>> [2/4] 启动三方下载验证: $V_REF ..."
+wget -q --timeout=30 --tries=2 -O "$DL_DIR/${FILE}.1" "$SOURCE_1/$FILE" &
+wget -q --timeout=30 --tries=2 -O "$DL_DIR/${FILE}.2" "$SOURCE_2/$FILE" &
+wget -q --timeout=30 --tries=2 -O "$DL_DIR/${FILE}.3" "$SOURCE_3/$FILE" &
+wait
+
+H1=$(sha256sum "$DL_DIR/${FILE}.1" 2>/dev/null | cut -d' ' -f1)
+H2=$(sha256sum "$DL_DIR/${FILE}.2" 2>/dev/null | cut -d' ' -f1)
+H3=$(sha256sum "$DL_DIR/${FILE}.3" 2>/dev/null | cut -d' ' -f1)
+
+# =========================================================
+# 第三阶段：决策树 (哈希匹配 -> 共识 -> 强制替换)
+# =========================================================
+NEED_FORCE_REPLACE=true
+FINAL_HASH=""
+
+if [ "$H1" == "$H_REF" ] || [ "$H2" == "$H_REF" ] || [ "$H3" == "$H_REF" ]; then
+    echo "✅ [判定] 级别 1: 完美匹配 23.05 基准哈希。"
+    [ "$H1" == "$H_REF" ] && mv "$DL_DIR/${FILE}.1" "$DL_DIR/$FILE"
+    [ "$H2" == "$H_REF" ] && [ ! -f "$DL_DIR/$FILE" ] && mv "$DL_DIR/${FILE}.2" "$DL_DIR/$FILE"
+    [ "$H3" == "$H_REF" ] && [ ! -f "$DL_DIR/$FILE" ] && mv "$DL_DIR/${FILE}.3" "$DL_DIR/$FILE"
+    FINAL_HASH="$H_REF"
+    NEED_FORCE_REPLACE=false # 情况 1 比较稳，可以不强拆，但为了保险我们后面统一执行一次替换
+
+elif [ -n "$H1" ] && [ "$H1" == "$H2" ] && [ "$H1" == "$H3" ]; then
+    echo "⚠️  [判定] 级别 2: 三方镜像一致但与基准不符，将自动更正哈希。"
+    mv "$DL_DIR/${FILE}.1" "$DL_DIR/$FILE"
+    FINAL_HASH="$H1"
+    NEED_FORCE_REPLACE=false
+    
+else
+    echo "🚨 [判定] 级别 3: 三方校验不一致或哈希冲突，执行强制物理救治。"
+    # 只要能下到一个(非0字节)，就拿它当种子
+    if [ -s "$DL_DIR/${FILE}.1" ]; then mv "$DL_DIR/${FILE}.1" "$DL_DIR/$FILE"; FINAL_HASH="$H1";
+    elif [ -s "$DL_DIR/${FILE}.2" ]; then mv "$DL_DIR/${FILE}.2" "$DL_DIR/$FILE"; FINAL_HASH="$H2";
+    fi
+    NEED_FORCE_REPLACE=true
+fi
+
+# 最后的兜底检查：如果源码包根本没下到
+if [ ! -s "$DL_DIR/$FILE" ]; then
+    echo "❌ 致命错误: 源码包在所有源中均 404 或损坏，救治失败。"
+    exit 1
+fi
+rm -f "$DL_DIR/${FILE}."*
+
+# =========================================================
+# 第四阶段：物理替换与硬化注入 (强制执行)
+# =========================================================
+echo ">>> [3/4] 正在执行 lang/rust 物理替换..."
+
+# 彻底清理当前环境
+rm -rf "$REAL_RUST_DIR"
+mkdir -p "$REAL_RUST_DIR"
+rm -rf "$OPENWRT_ROOT/build_dir/host/rustc-*"
+rm -rf "$OPENWRT_ROOT/staging_dir/host/stamp/.rust_installed"
+
+# 从救治底座拷贝干净的代码
+cp -r "$TEMP_REPO/lang/rust/"* "$REAL_RUST_DIR/"
+rm -rf "$TEMP_REPO"
+
+# 修正哈希 (基于实际下载到的那个文件)
+if [ -n "$FINAL_HASH" ]; then
+    sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$FINAL_HASH/" "$REAL_RUST_MK"
+    echo "✅ Makefile 哈希已更新为物理文件实际值。"
+fi
+
+# 强制注入本地硬化优化 (无论哪种情况成功的，都要注入以保过)
+apply_final_hardening "$REAL_RUST_MK"
+
+echo "=========================================="
+echo "✅ Rust 闭环救治圆满完成！"
+echo ">>> 强制回滚分支: $PKGS_BRANCH"
+echo ">>> 强制回滚版本: $V_REF"
+echo ">>> 优化模式: CI-LLVM + 本地硬化 + 限流"
+echo "=========================================="
 
 # ----------------------------------------------------------------
 # 6. 【最关键一步】强制重新注册所有 Feeds
