@@ -140,7 +140,6 @@ if [ -n "$KSMBD_FILES" ]; then
     echo "✅ KSMBD 菜单已移动到 NAS"
 fi
 
-#!/bin/bash
 set -e
 
 echo "=========================================="
