@@ -140,76 +140,83 @@ if [ -n "$KSMBD_FILES" ]; then
     echo "✅ KSMBD 菜单已移动到 NAS"
 fi
 
-#!/bin/bash
-# Description: DIY script part 2 (Fix Rust Environment with Hash Auto-Correction)
+# =========================================================
+# 0. [新增] 深度清理 Rust 相关残留 (防止缓存导致修复失败)
+# =========================================================
+echo "🧹 Cleaning up old Rust artifacts..."
+
+# 1. 清理编译中间目录 (不管之前编没编过，删了重来)
+# build_dir/host/rustc-xxxx 是编译发生的地方
+rm -rf build_dir/host/rustc-*
+rm -rf build_dir/target-*/host/rustc-*
+
+# 2. 清理 dl 目录下的 Rust 源码包
+# 之前下载失败的、Hash 不对的包必须删掉，强制脚本重新下载官方包
+rm -f dl/rustc-*.tar.xz
+
+# 3. 清理 Cargo 索引缓存
+# 有时候 crate 索引损坏也会导致编译失败
+rm -rf dl/cargo/registry/index/*
+
+echo "✅ Cleanup done. Environment is clean."
 
 # =========================================================
-# 自动化 Rust 修复脚本：替换源 -> 下载官方包 -> 自动修正 Hash
+# 1. 修复 Rust 编译失败：替换为 ImmortalWrt 23.05 的稳定版
 # =========================================================
-echo "🔧 Starting Advanced Rust Fix..."
+echo "🔧 Starting Ultimate Rust Fix..."
 
-# 1. 清理旧环境 & 拉取 ImmortalWrt 23.05 的 Rust (1.85.0 稳定版)
-echo ">>> Step 1: Syncing Makefile from ImmortalWrt 23.05..."
+RUST_MK="feeds/packages/lang/rust/Makefile"
+DL_DIR="dl"
+
+# 移除 feeds 中的旧 rust
 rm -rf feeds/packages/lang/rust
+
+# 克隆 23.05 稳定分支
 git clone --depth 1 -b openwrt-23.05 https://github.com/immortalwrt/packages.git /tmp/temp_packages
-# 确保目录存在
 mkdir -p feeds/packages/lang
 cp -r /tmp/temp_packages/lang/rust feeds/packages/lang/
 rm -rf /tmp/temp_packages
 
-# 2. 从 Makefile 读取 Rust 版本信息
-RUST_MK="feeds/packages/lang/rust/Makefile"
-# 提取版本号 (例如 1.85.0)
+# =========================================================
+# 2. 自动下载源码并修正 Hash (双重保险)
+# =========================================================
 RUST_VERSION=$(grep '^PKG_VERSION:=' "$RUST_MK" | cut -d '=' -f 2)
-# 提取 Makefile 中记录的旧 Hash
-OLD_HASH=$(grep '^PKG_HASH:=' "$RUST_MK" | cut -d '=' -f 2)
-
-echo "   Detected Rust Version: $RUST_VERSION"
-echo "   Makefile Hash: $OLD_HASH"
-
-# 3. 准备下载路径
-DL_DIR="dl"
-mkdir -p "$DL_DIR"
-# 官方源码包文件名格式
 RUST_FILE="rustc-${RUST_VERSION}-src.tar.xz"
-# 官方下载地址
 RUST_URL="https://static.rust-lang.org/dist/${RUST_FILE}"
 
-# 4. 下载官方源码包 (如果本地没有的话)
-if [ ! -f "$DL_DIR/$RUST_FILE" ]; then
-    echo ">>> Step 2: Downloading official source from rust-lang.org..."
-    wget -q --show-progress -O "$DL_DIR/$RUST_FILE" "$RUST_URL"
-    
-    if [ $? -ne 0 ]; then
-        echo "❌ Error: Download failed! Please check network or version."
-        exit 1
-    fi
-else
-    echo ">>> Step 2: File $RUST_FILE already exists in dl/, skipping download."
-fi
+mkdir -p "$DL_DIR"
+# 因为前面执行了清理，这里肯定会重新下载
+echo ">>> Downloading $RUST_FILE..."
+wget -q --show-progress -O "$DL_DIR/$RUST_FILE" "$RUST_URL" || { echo "Download failed"; exit 1; }
 
-# 5. 计算真实 Hash
-echo ">>> Step 3: Calculating SHA256 checksum..."
-# 计算下载文件的 SHA256
+# 计算并应用新 Hash
 NEW_HASH=$(sha256sum "$DL_DIR/$RUST_FILE" | awk '{print $1}')
-echo "   Actual File Hash: $NEW_HASH"
+sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$NEW_HASH/" "$RUST_MK"
+echo "✅ Hash corrected to: $NEW_HASH"
 
-# 6. 对比并自动修正 Makefile
-echo ">>> Step 4: Verifying and Patching..."
+# =========================================================
+# 3. 编译环境硬化 (应用优化补丁)
+# =========================================================
+echo ">>> Applying Build Hardening..."
 
-if [ "$OLD_HASH" != "$NEW_HASH" ]; then
-    echo "⚠️  Hash Mismatch detected!"
-    echo "   Old: $OLD_HASH"
-    echo "   New: $NEW_HASH"
-    echo "   Action: Updating Makefile with new hash..."
-    
-    # 使用 sed 替换 Makefile 中的 Hash
-    sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$NEW_HASH/" "$RUST_MK"
-    
-    echo "✅ Makefile updated successfully."
-else
-    echo "✅ Hash matches! No changes needed."
-fi
+# A. 强制开启 CI-LLVM
+sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
+sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
+
+# B. 清理补丁残留
+sed -i '/Build\/Patch/a \	find $(HOST_BUILD_DIR) -name "*.orig" -delete\n	find $(HOST_BUILD_DIR) -name "*.rej" -delete' "$RUST_MK"
+
+# C. 暴力删除校验文件
+sed -i '/\$(PYTHON3) \$(HOST_BUILD_DIR)\/x.py/i \	find $(HOST_BUILD_DIR)/vendor -name .cargo-checksum.json -delete' "$RUST_MK"
+
+# D. 环境变量优化 & 限制线程
+sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_PROFILE_RELEASE_INCREMENTAL=false\nexport CARGO_INCREMENTAL=0' "$RUST_MK"
+sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$RUST_MK"
+
+# E. 修正下载源
+sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
+
+echo "✅ Rust environment fully optimized!"
 
 ----------------------------------------------------------------
 【最终收尾】强行刷新整个编译索引，确保所有“掉包”操作被系统识别
