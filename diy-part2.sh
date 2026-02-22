@@ -199,20 +199,11 @@ echo ">>> 正在注入硬化补丁..."
 sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
 sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
 
-# 清理 .orig/.rej 文件
-sed -i '/Build\/Patch/a \	find $(HOST_BUILD_DIR) -name "*.orig" -delete\n	find $(HOST_BUILD_DIR) -name "*.rej" -delete' "$RUST_MK"
-
-# 删除 vendor 校验 JSON
-sed -i '/\$(PYTHON3) \$(HOST_BUILD_DIR)\/x.py/i \	find $(HOST_BUILD_DIR)/vendor -name .cargo-checksum.json -delete' "$RUST_MK"
-
 # 禁用增量编译，防止 OOM
 sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_PROFILE_RELEASE_INCREMENTAL=false\nexport CARGO_INCREMENTAL=0' "$RUST_MK"
 
 # 限制并行编译数
 sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$RUST_MK"
-
-# 移除强制冻结
-sed -i 's/--frozen//g' "$RUST_MK"
 
 # 修正源码地址（删除行尾空格）
 sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
