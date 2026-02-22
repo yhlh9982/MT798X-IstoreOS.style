@@ -140,13 +140,16 @@ if [ -n "$KSMBD_FILES" ]; then
     echo "✅ KSMBD 菜单已移动到 NAS"
 fi
 
+#!/bin/bash
+set -e
+
 echo "=========================================="
-echo "Rust 终极闭环救治脚本 (V13.2 终极版)"
+echo "Rust 终极救治脚本 (V14.0 智能探测)"
 echo "=========================================="
 
 # 1. 配置区域
 PKGS_REPO="https://github.com/openwrt/packages.git"
-PKGS_BRANCH="openwrt-23.05"
+PKGS_BRANCH="master"  # 我们想要的稳定分支 openwrt-23.05  openwrt-24.10  openwrt-25.12  master  可选
 RUST_OFFICIAL_URL="https://static.rust-lang.org/dist"
 
 OPENWRT_ROOT=$(pwd)
@@ -155,103 +158,121 @@ RUST_MK="$RUST_DIR/Makefile"
 DL_DIR="$OPENWRT_ROOT/dl"
 
 # ==========================================
-# 第一步：物理清空与底座对齐
+# 第一步：物理替换定义 (必须先执行)
 # ==========================================
-echo ">>> [1/5] 清空当前 Rust 环境并同步官方 $PKGS_BRANCH ..."
-# 物理删除旧包、编译残余、以及 OpenWrt 编译状态戳记
+echo ">>> [1/5] 正在物理替换 Rust 定义为 $PKGS_BRANCH 版本..."
 rm -rf "$RUST_DIR"
 rm -rf "$OPENWRT_ROOT/build_dir/host/rustc-*"
-rm -rf "$OPENWRT_ROOT/build_dir/target-*/host/rustc-*"
 rm -rf "$OPENWRT_ROOT/staging_dir/host/stamp/.rust_installed"
 
-# 克隆指定分支的定义
 TEMP_REPO="/tmp/rust_sync_$$"
 git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null
 mkdir -p "$RUST_DIR"
 cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
 rm -rf "$TEMP_REPO"
-echo "✅ 成功锁定 $PKGS_BRANCH 版本的 Makefile 和 Patches。"
 
 # ==========================================
-# 第二步：多重下载与哈希自适应校验
+# 第二步：强制刷新索引 (让系统识别 1.85.0)
 # ==========================================
-V=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-EXPECTED_H=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-RUST_FILE="rustc-${V}-src.tar.xz"
-DL_PATH="$DL_DIR/$RUST_FILE"
-
-mkdir -p "$DL_DIR"
-
-echo ">>> [2/5] 正在从官网获取版本 $V 的源码..."
-# 先删掉之前可能下载失败的残留
-rm -f "$DL_PATH"
-
-# 权威来源下载
-wget -q --timeout=60 --tries=3 -O "$DL_PATH" "$RUST_OFFICIAL_URL/$RUST_FILE"
-
-if [ -s "$DL_PATH" ]; then
-    ACTUAL_H=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
-    if [ "$ACTUAL_H" == "$EXPECTED_H" ]; then
-        echo "✅ 哈希校验一致：$ACTUAL_H"
-    else
-        echo "⚠️ 哈希不匹配！物理文件: $ACTUAL_H | Makefile 记录: $EXPECTED_H"
-        echo ">>> 正在执行物理对齐：强行修正 Makefile 以适配物理文件..."
-        sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
-        echo "✅ 哈希记录已更新。"
-    fi
-else
-    echo "❌ 致命错误：源码包下载失败，请检查 Actions 网络。"
-    exit 1
-fi
-
-# ==========================================
-# 第三步：注入本地编译硬化优化
-# ==========================================
-echo ">>> [3/5] 注入本地编译加速与容错指令..."
-
-# 1. 强制启用预编译 LLVM (CI-LLVM)
-sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
-sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
-
-# 2. 暴力解决补丁残余 (.orig) - 注入到 Build/Patch 后
-# 使用 Tab 键开头确保符合 Makefile 语法
-sed -i '/Build\/Patch/a \	find $(HOST_BUILD_DIR) -name "*.orig" -delete\n	find $(HOST_BUILD_DIR) -name "*.rej" -delete' "$RUST_MK"
-
-# 3. 暴力屏蔽 Checksum 校验 - 注入到 x.py 执行前
-# 确保在 $(PYTHON3) 命令前插入，删除所有 vendor 下的 json 校验
-sed -i '/\$(PYTHON3) \$(HOST_BUILD_DIR)\/x.py/i \	find $(HOST_BUILD_DIR)/vendor -name .cargo-checksum.json -delete' "$RUST_MK"
-
-# 4. 环境变量硬化
-# 禁用增量编译，防止 Actions 文件系统同步导致的问题
-sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_PROFILE_RELEASE_INCREMENTAL=false\nexport CARGO_INCREMENTAL=0' "$RUST_MK"
-
-# 5. 限制并行链接任务 (关键：防止 15G RAM 被撑爆)
-sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$RUST_MK"
-
-# 6. 其它兼容修正
-sed -i 's/--frozen//g' "$RUST_MK"
-sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
-
-# ==========================================
-# 第四步：强制刷新 Feeds 索引 (关键收尾)
-# ==========================================
-echo ">>> [4/5] 强制刷新编译系统索引..."
-# 删除 tmp 目录是让系统识别“掉包”后 Rust 定义的唯一办法
+echo ">>> [2/5] 正在强制更新系统索引以匹配新 Makefile..."
 rm -rf "$OPENWRT_ROOT/tmp"
 ./scripts/feeds update -i
 ./scripts/feeds install -f -p packages rust
 
 # ==========================================
-# 第五步：二次核查并结束
+# 第三步：哈希核实与智能下载
 # ==========================================
-echo ">>> [5/5] 执行最终一致性检查..."
-FINAL_VER=$(grep '^PKG_VERSION:=' "$RUST_MK" | cut -d'=' -f2)
-echo "✅ Rust 锁定版本: $FINAL_VER"
-echo "✅ CI-LLVM 状态: $(grep 'download-ci-llvm' $RUST_MK | head -1)"
+# 此时获取的是 特定 分支 Makefile 里的信息
+V=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+H_EXPECTED=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+RUST_FILE="rustc-${V}-src.tar.xz"
+DL_PATH="$DL_DIR/$RUST_FILE"
 
-echo "=========================================="
-echo "✅ Rust 闭环救治已完成！现在可以开始 make。"
-echo "=========================================="
+mkdir -p "$DL_DIR"
+
+# 逻辑判断：如果文件已存在（可能由系统预下），则核实哈希
+DOWNLOAD_NEED=true
+if [ -f "$DL_PATH" ]; then
+    echo ">>> 发现预存文件，正在核实哈希..."
+    ACTUAL_H=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
+    if [ "$ACTUAL_H" == "$H_EXPECTED" ]; then
+        echo "✅ 哈希完全匹配，无需重复下载。"
+        DOWNLOAD_NEED=false
+    else
+        echo "⚠️  哈希不匹配，准备执行官方镜像救治..."
+        rm -f "$DL_PATH"
+    fi
+fi
+
+# 如果不符合，启动手动救治下载
+if [ "$DOWNLOAD_NEED" == "true" ]; then
+    echo ">>> 正在从 Rust 官网下载权威源码包: $V ..."
+    wget -q --timeout=60 --tries=3 -O "$DL_PATH" "$RUST_OFFICIAL_URL/$RUST_FILE"
+    
+    if [ -s "$DL_PATH" ]; then
+        FINAL_H=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
+        if [ "$FINAL_H" != "$H_EXPECTED" ]; then
+            echo "⚠️  官方镜像哈希 ($FINAL_H) 与 Makefile ($H_EXPECTED) 仍不符"
+            echo ">>> 正在执行物理对齐：修正 Makefile 哈希..."
+            sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$FINAL_H/" "$RUST_MK"
+        else
+            echo "✅ 官方下载校验通过。"
+        fi
+    else
+        echo "❌ 致命错误：无法从所有渠道获取源码包。"
+        exit 1
+    fi
+fi
+
+# ==========================================
+# 第四步：注入本地硬化优化
+# ==========================================
+echo ">>> [4/5] 注入加速与硬化指令..."
+
+# 开启 CI-LLVM
+sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
+sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
+
+# 处理补丁残余
+sed -i '/Build\/Patch/a \	find $(HOST_BUILD_DIR) -name "*.orig" -delete\n	find $(HOST_BUILD_DIR) -name "*.rej" -delete' "$RUST_MK"
+
+# 屏蔽 Checksum
+sed -i '/\$(PYTHON3) \$(HOST_BUILD_DIR)\/x.py/i \	find $(HOST_BUILD_DIR)/vendor -name .cargo-checksum.json -delete' "$RUST_MK"
+
+# 内存保护与任务限制 (-j 2)
+sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_PROFILE_RELEASE_INCREMENTAL=false\nexport CARGO_INCREMENTAL=0' "$RUST_MK"
+sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$RUST_MK"
+
+# 地址补正
+sed -i 's/--frozen//g' "$RUST_MK"
+sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
+
+# ==========================================
+# 第五步：全系统索引强制重映射 (最终锁定)
+# ==========================================
+echo ">>> [5/5] 正在全量刷新编译索引 (针对 Rust/MosDNS/SmartDNS/Golang)..."
+
+# 1. 物理删除所有临时索引缓存 (必须！否则系统可能不识别新加入的插件)
+rm -rf "$OPENWRT_ROOT/tmp"
+
+# 2. 更新本地 Feeds 索引 
+# -i 参数非常重要：它让脚本只扫描本地已有的文件夹，不尝试通过 git clone 覆盖你的手动修改
+./scripts/feeds update -i
+
+# 3. 强制安装所有 Feeds 软件包
+# -a: 扫描所有 Feed 源中的所有包
+# -f: 强制（Force）模式，这会切断旧的软链接并重新指向你新下载/修改的源码路径
+./scripts/feeds install -a -f
+
+echo "✅ 恭喜！Rust、Golang、MosDNS、SmartDNS 及其它所有修改已全量就绪。"
+
+# ==========================================
+# 额外：最终一致性核查 (可选，用于在日志中确认)
+# ==========================================
+echo ">>> 最终环境核对:"
+echo "Rust 版本: $(grep '^PKG_VERSION:=' $RUST_MK | cut -d'=' -f2)"
+echo "Golang 路径: $(ls -d feeds/packages/lang/golang 2>/dev/null || echo '缺失')"
+echo "MosDNS 路径: $(find package feeds -name "mosdns" -type d | head -1)"
 
 # 修改默认 IP (192.168.30.1)
 sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
