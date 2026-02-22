@@ -217,10 +217,10 @@ fi
 echo "🔄 正在进行全系统索引强制重映射..."
 1. 物理删除所有临时索引
 rm -rf tmp
-2. 更新 Feeds 索引（-i 表示仅读取本地已修改的文件，不重新联网下）
-./scripts/feeds update -i
+2. 更新 Feeds 索引
+./scripts/feeds update -a
 3. 强制安装所有包，-f 会把 package/feeds 下的旧软链接全部切断并重指向
-./scripts/feeds install -a -f
+./scripts/feeds install -a
 echo "✅ 恭喜！所有修改已全量就绪。"
 
 # 修改默认 IP (192.168.30.1)
