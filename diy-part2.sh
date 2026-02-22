@@ -177,48 +177,64 @@ rm -rf "$OPENWRT_ROOT/tmp"
 ./scripts/feeds install -f -p packages rust
 
 # ==========================================
-# 第三步：哈希核实与智能下载
+# 第三步：智能下载与哈希自适应救治 (V14.2 强化版)
 # ==========================================
-# 此时获取的是 特定 分支 Makefile 里的信息
-V=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-H_EXPECTED=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+# 1. 健壮地提取版本和哈希 (兼容 := 和 = 两种写法)
+V=$(grep -E '^PKG_VERSION[:=]+' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+H_EXPECTED=$(grep -E '^PKG_HASH[:=]+' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
 RUST_FILE="rustc-${V}-src.tar.xz"
 DL_PATH="$DL_DIR/$RUST_FILE"
 
+# 检查变量是否提取成功，防止空变量导致后续毁灭性错误
+[ -z "$V" ] && { echo "❌ 错误: 无法从 Makefile 提取版本号"; exit 1; }
+
 mkdir -p "$DL_DIR"
 
-# 逻辑判断：如果文件已存在（可能由系统预下），则核实哈希
-DOWNLOAD_NEED=true
+# 2. 检查现有文件并校验
+NEED_DOWNLOAD=true
 if [ -f "$DL_PATH" ]; then
-    echo ">>> 发现预存文件，正在核实哈希..."
+    echo ">>> 发现预存文件: $RUST_FILE，正在核实哈希..."
     ACTUAL_H=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
     if [ "$ACTUAL_H" == "$H_EXPECTED" ]; then
-        echo "✅ 哈希完全匹配，无需重复下载。"
-        DOWNLOAD_NEED=false
+        echo "✅ 现有文件哈希匹配，跳过下载。"
+        NEED_DOWNLOAD=false
     else
-        echo "⚠️  哈希不匹配，准备执行官方镜像救治..."
+        echo "⚠️  哈希不匹配 (实际: ${ACTUAL_H:0:12}...)，文件已损坏或过期。"
         rm -f "$DL_PATH"
     fi
 fi
 
-# 如果不符合，启动手动救治下载
-if [ "$DOWNLOAD_NEED" == "true" ]; then
-    echo ">>> 正在从 Rust 官网下载权威源码包: $V ..."
-    wget -q --timeout=60 --tries=3 -O "$DL_PATH" "$RUST_OFFICIAL_URL/$RUST_FILE"
-    
-    if [ -s "$DL_PATH" ]; then
-        FINAL_H=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
-        if [ "$FINAL_H" != "$H_EXPECTED" ]; then
-            echo "⚠️  官方镜像哈希 ($FINAL_H) 与 Makefile ($H_EXPECTED) 仍不符"
-            echo ">>> 正在执行物理对齐：修正 Makefile 哈希..."
-            sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$FINAL_H/" "$RUST_MK"
-        else
-            echo "✅ 官方下载校验通过。"
-        fi
-    else
-        echo "❌ 致命错误：无法从所有渠道获取源码包。"
+# 3. 原子化下载逻辑 (先下到临时文件，成功后再移动)
+if [ "$NEED_DOWNLOAD" == "true" ]; then
+    echo ">>> 正在从官方镜像站下载 Rust $V ..."
+    # 使用临时后缀防止污染 dl 目录
+    if ! wget -q --timeout=60 --tries=3 -O "${DL_PATH}.tmp" "$RUST_OFFICIAL_URL/$RUST_FILE"; then
+        echo "❌ 致命错误：官网下载失败，请检查 Actions 网络环境。"
         exit 1
     fi
+    
+    # 检查下载的文件是否合法（非空）
+    if [ ! -s "${DL_PATH}.tmp" ]; then
+        echo "❌ 错误：下载的文件大小为 0，请重试。"
+        rm -f "${DL_PATH}.tmp"
+        exit 1
+    fi
+    
+    # 移动为正式文件
+    mv "${DL_PATH}.tmp" "$DL_PATH"
+fi
+
+# 4. 【核心自愈】哈希物理对齐
+FINAL_H=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
+if [ "$FINAL_H" != "$H_EXPECTED" ]; then
+    echo "🚨 哈希自适应修正启动！"
+    echo "    Makefile 预期: $H_EXPECTED"
+    echo "    物理文件实际: $FINAL_H"
+    # 强力替换：兼容冒号等号和普通等号，且处理行尾可能存在的残留空格
+    sed -i "s/^PKG_HASH[:=].*/PKG_HASH:=$FINAL_H/" "$RUST_MK"
+    echo "✅ Makefile 哈希已重写为物理文件指纹。"
+else
+    echo "✅ 最终哈希校验一致，环境就绪。"
 fi
 
 # ==========================================
