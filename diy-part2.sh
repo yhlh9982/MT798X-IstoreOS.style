@@ -140,92 +140,124 @@ if [ -n "$KSMBD_FILES" ]; then
     echo "✅ KSMBD 菜单已移动到 NAS"
 fi
 
-# =========================================================
-# 0. [新增] 深度清理 Rust 相关残留 (防止缓存导致修复失败)
-# =========================================================
-echo "🧹 Cleaning up old Rust artifacts..."
+echo "=========================================="
+echo "Rust 深度修复脚本 (针对 23.05/24.10 分支)"
+echo "=========================================="
 
-# 1. 清理编译中间目录 (不管之前编没编过，删了重来)
-# build_dir/host/rustc-xxxx 是编译发生的地方
-rm -rf build_dir/host/rustc-*
-rm -rf build_dir/target-*/host/rustc-*
+# 1. 路径识别与环境检查
+TARGET_DIR="${1:-$(pwd)}"
 
-# 2. 清理 dl 目录下的 Rust 源码包
-# 之前下载失败的、Hash 不对的包必须删掉，强制脚本重新下载官方包
-rm -f dl/rustc-*.tar.xz
+check_openwrt_root() {
+    [ -f "$1/scripts/feeds" ] && [ -f "$1/Makefile" ]
+}
 
-# 3. 清理 Cargo 索引缓存
-# 有时候 crate 索引损坏也会导致编译失败
-rm -rf dl/cargo/registry/index/*
+if check_openwrt_root "$TARGET_DIR"; then
+    OPENWRT_ROOT="$TARGET_DIR"
+    echo "✅ 找到 OpenWrt 根目录: $OPENWRT_ROOT"
+else
+    # 自动探测子目录
+    SUB_DIR=$(find . -maxdepth 2 -name "scripts" -type d | head -n 1 | xargs dirname 2>/dev/null)
+    if [ -n "$SUB_DIR" ] && check_openwrt_root "$SUB_DIR"; then
+        OPENWRT_ROOT="$(realpath "$SUB_DIR")"
+        echo "✅ 在子目录找到 OpenWrt 根目录: $OPENWRT_ROOT"
+    else
+        echo "❌ 错误: 无法确定 OpenWrt 源码根目录，请进入源码目录运行或指定路径。"
+        exit 1
+    fi
+fi
 
-echo "✅ Cleanup done. Environment is clean."
+# 定义核心路径 (注意：23.05/24.10 的 Rust 通常在 feeds/packages/lang/rust)
+RUST_DIR="$OPENWRT_ROOT/feeds/packages/lang/rust"
+RUST_MK="$RUST_DIR/Makefile"
+DL_DIR="$OPENWRT_ROOT/dl"
 
-# =========================================================
-# 1. 修复 Rust 编译失败：替换为 ImmortalWrt 23.05 的稳定版
-# =========================================================
-echo "🔧 Starting Ultimate Rust Fix..."
+# 2. 彻底清理旧的残余 (解决 Cargo.toml.orig 持续报错的关键)
+echo ">>> 执行深度清理，排除旧版本和脏数据干扰..."
+rm -rf "$RUST_DIR"
+rm -rf "$OPENWRT_ROOT/build_dir/host/rustc-*"
+rm -rf "$OPENWRT_ROOT/build_dir/target-*/host/rustc-*"
+rm -rf "$OPENWRT_ROOT/dl/cargo/registry/index/*"
 
-RUST_MK="feeds/packages/lang/rust/Makefile"
-DL_DIR="dl"
+# 3. 深度同步官方最新构建脚本 (Makefile + Patches)
+echo ">>> 正在从官方仓库同步最新的 Rust 构建定义..."
+mkdir -p "$RUST_DIR"
+TEMP_REPO="/tmp/openwrt_pkg_rust"
+rm -rf "$TEMP_REPO"
 
-# 移除 feeds 中的旧 rust
-rm -rf feeds/packages/lang/rust
+# 建议根据你的源码版本选择分支：openwrt-23.05 或 openwrt-24.10
+BRANCH="openwrt-23.05" 
+git clone --depth=1 -b $BRANCH https://github.com/openwrt/packages.git "$TEMP_REPO"
+if [ -d "$TEMP_REPO/lang/rust" ]; then
+    cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
+    rm -rf "$TEMP_REPO"
+    echo "✅ 成功同步 $BRANCH 分支的 Rust 定义"
+else
+    echo "❌ 错误: 同步失败，请检查网络或分支名"
+    exit 1
+fi
 
-# 克隆 23.05 稳定分支
-git clone --depth 1 -b openwrt-23.05 https://github.com/immortalwrt/packages.git /tmp/temp_packages
-mkdir -p feeds/packages/lang
-cp -r /tmp/temp_packages/lang/rust feeds/packages/lang/
-rm -rf /tmp/temp_packages
+# 4. 手术刀式修改 Makefile (优化与硬化)
+echo ">>> 正在应用深度修复补丁..."
 
-# =========================================================
-# 2. 自动下载源码并修正 Hash (双重保险)
-# =========================================================
-RUST_VERSION=$(grep '^PKG_VERSION:=' "$RUST_MK" | cut -d '=' -f 2)
-RUST_FILE="rustc-${RUST_VERSION}-src.tar.xz"
-RUST_URL="https://static.rust-lang.org/dist/${RUST_FILE}"
-
-mkdir -p "$DL_DIR"
-# 因为前面执行了清理，这里肯定会重新下载
-echo ">>> Downloading $RUST_FILE..."
-wget -q --show-progress -O "$DL_DIR/$RUST_FILE" "$RUST_URL" || { echo "Download failed"; exit 1; }
-
-# 计算并应用新 Hash
-NEW_HASH=$(sha256sum "$DL_DIR/$RUST_FILE" | awk '{print $1}')
-sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$NEW_HASH/" "$RUST_MK"
-echo "✅ Hash corrected to: $NEW_HASH"
-
-# =========================================================
-# 3. 编译环境硬化 (应用优化补丁)
-# =========================================================
-echo ">>> Applying Build Hardening..."
-
-# A. 强制开启 CI-LLVM
+# A. 开启 CI-LLVM 模式 (核心：解决磁盘空间爆满，提速 30 分钟)
 sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
 sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
 
-# B. 清理补丁残留
-sed -i '/Build\/Patch/a \	find $(HOST_BUILD_DIR) -name "*.orig" -delete\n	find $(HOST_BUILD_DIR) -name "*.rej" -delete' "$RUST_MK"
-
-# C. 暴力删除校验文件
+# B. 暴力跳过 Checksum 校验 (解决所有 vendor 库报错的“银弹”)
+# 在执行 x.py 编译前，强制删除 vendor 目录下的所有校验 JSON
 sed -i '/\$(PYTHON3) \$(HOST_BUILD_DIR)\/x.py/i \	find $(HOST_BUILD_DIR)/vendor -name .cargo-checksum.json -delete' "$RUST_MK"
 
-# D. 环境变量优化 & 限制线程
+# C. 清理 Patch 产生的备份 (解决 Cargo.toml.orig 报错)
+# 打完补丁后立即删除所有 .orig 和 .rej 文件
+sed -i '/Build\/Patch/a \	find $(HOST_BUILD_DIR) -name "*.orig" -delete\n	find $(HOST_BUILD_DIR) -name "*.rej" -delete' "$RUST_MK"
+
+# D. 环境变量硬化 (禁用增量编译，防止 GitHub Actions 内存溢出)
 sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_PROFILE_RELEASE_INCREMENTAL=false\nexport CARGO_INCREMENTAL=0' "$RUST_MK"
+
+# E. 限制并行任务 (防止内存撑爆)
 sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$RUST_MK"
 
-# E. 修正下载源
+# F. 其他修正
+sed -i 's/--frozen//g' "$RUST_MK"
 sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
 
-echo "✅ Rust environment fully optimized!"
+# 5. 源码预下载 (全球权威镜像加速)
+RUST_VER=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+RUST_HASH=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+RUST_FILE="rustc-${RUST_VER}-src.tar.xz"
+DL_PATH="$DL_DIR/$RUST_FILE"
 
-echo "🔄 正在进行全系统索引强制重映射..."
-1. 物理删除所有临时索引
-rm -rf tmp
-2. 更新 Feeds 索引
-./scripts/feeds update -a
-3. 强制安装所有包，-f 会把 package/feeds 下的旧软链接全部切断并重指向
-./scripts/feeds install -a
-echo "✅ 恭喜！所有修改已全量就绪。"
+mkdir -p "$DL_DIR"
+if [ ! -s "$DL_PATH" ]; then
+    echo ">>> 正在从全球权威镜像下载 Rust 源码: $RUST_VER"
+    MIRRORS=(
+        "https://static.rust-lang.org/dist/${RUST_FILE}"
+        "https://rust-static-dist.s3.amazonaws.com/dist/${RUST_FILE}"
+        "https://mirror.switch.ch/ftp/mirror/rust/dist/${RUST_FILE}"
+    )
+    for mirror in "${MIRRORS[@]}"; do
+        echo ">>> 尝试节点: $mirror"
+        if wget -q --show-progress --timeout=30 --tries=2 -O "$DL_PATH" "$mirror"; then
+            [ -s "$DL_PATH" ] && break
+        fi
+    done
+fi
+
+# 6. Hash 校验
+if [ -f "$DL_PATH" ] && [ -n "$RUST_HASH" ]; then
+    LOCAL_HASH=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
+    if [ "$LOCAL_HASH" != "$RUST_HASH" ]; then
+        echo "⚠️  警告: Hash 不匹配，文件损坏，删除并由系统重新下载。"
+        rm -f "$DL_PATH"
+    else
+        echo "✅ Hash 校验通过，源码包完整。"
+    fi
+fi
+
+# =========================================================
+# 4. 刷新 Feeds
+# =========================================================
+./scripts/feeds install -a -f -p packages
 
 # 修改默认 IP (192.168.30.1)
 sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
