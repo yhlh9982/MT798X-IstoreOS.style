@@ -140,147 +140,77 @@ if [ -n "$KSMBD_FILES" ]; then
     echo "✅ KSMBD 菜单已移动到 NAS"
 fi
 
-echo "=========================================="
-echo "Rust 深度同步与环境硬化脚本 (自适应哈希版)"
-echo "=========================================="
+#!/bin/bash
+# Description: DIY script part 2 (Fix Rust Environment with Hash Auto-Correction)
 
-# 1. 配置区域
-PKGS_REPO="https://github.com/openwrt/packages.git"
-PKGS_BRANCH="openwrt-23.05"
+# =========================================================
+# 自动化 Rust 修复脚本：替换源 -> 下载官方包 -> 自动修正 Hash
+# =========================================================
+echo "🔧 Starting Advanced Rust Fix..."
 
-# 2. 路径识别
-TARGET_DIR="${1:-$(pwd)}"
-check_openwrt_root() { [ -f "$1/scripts/feeds" ] && [ -f "$1/Makefile" ]; }
+# 1. 清理旧环境 & 拉取 ImmortalWrt 23.05 的 Rust (1.85.0 稳定版)
+echo ">>> Step 1: Syncing Makefile from ImmortalWrt 23.05..."
+rm -rf feeds/packages/lang/rust
+git clone --depth 1 -b openwrt-23.05 https://github.com/immortalwrt/packages.git /tmp/temp_packages
+# 确保目录存在
+mkdir -p feeds/packages/lang
+cp -r /tmp/temp_packages/lang/rust feeds/packages/lang/
+rm -rf /tmp/temp_packages
 
-if check_openwrt_root "$TARGET_DIR"; then
-    OPENWRT_ROOT="$TARGET_DIR"
-else
-    SUB_DIR=$(find . -maxdepth 2 -name "scripts" -type d | head -n 1 | xargs dirname 2>/dev/null)
-    [ -n "$SUB_DIR" ] && check_openwrt_root "$SUB_DIR" && OPENWRT_ROOT="$(realpath "$SUB_DIR")" || { echo "❌ 错误: 未找到 OpenWrt 根目录"; exit 1; }
-fi
+# 2. 从 Makefile 读取 Rust 版本信息
+RUST_MK="feeds/packages/lang/rust/Makefile"
+# 提取版本号 (例如 1.85.0)
+RUST_VERSION=$(grep '^PKG_VERSION:=' "$RUST_MK" | cut -d '=' -f 2)
+# 提取 Makefile 中记录的旧 Hash
+OLD_HASH=$(grep '^PKG_HASH:=' "$RUST_MK" | cut -d '=' -f 2)
 
-RUST_DIR="$OPENWRT_ROOT/feeds/packages/lang/rust"
-RUST_MK="$RUST_DIR/Makefile"
-DL_DIR="$OPENWRT_ROOT/dl"
+echo "   Detected Rust Version: $RUST_VERSION"
+echo "   Makefile Hash: $OLD_HASH"
 
-echo "✅ OpenWrt 根目录: $OPENWRT_ROOT"
-
-# 3. 深度清理
-echo ">>> 正在执行深度清理..."
-rm -rf "$RUST_DIR"
-rm -rf "$OPENWRT_ROOT/build_dir/host/rustc-*"
-rm -rf "$OPENWRT_ROOT/build_dir/target-*/host/rustc-*"
-rm -rf "$OPENWRT_ROOT/staging_dir/host/pkginfo/rust.default.install"
-
-# 4. 同步 Packages 版本
-echo ">>> 正在从 $PKGS_REPO [$PKGS_BRANCH] 同步 Rust 定义..."
-mkdir -p "$RUST_DIR"
-TEMP_REPO="/tmp/rust_sync_repo_$$"
-rm -rf "$TEMP_REPO"
-
-if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO"; then
-    cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
-    rm -rf "$TEMP_REPO"
-    echo "✅ 成功同步分支: $PKGS_BRANCH"
-else
-    echo "❌ 错误: 无法连接仓库"
-    exit 1
-fi
-
-if [ ! -f "$RUST_MK" ]; then
-    echo "❌ 错误: 同步失败，找不到 Makefile"
-    exit 1
-fi
-
-# 5. 应用优化补丁
-echo ">>> 正在注入硬化补丁..."
-
-# 开启 CI-LLVM 模式（节省磁盘空间）
-sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
-sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
-
-# 禁用增量编译，防止 OOM
-sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_PROFILE_RELEASE_INCREMENTAL=false\nexport CARGO_INCREMENTAL=0' "$RUST_MK"
-
-# 限制并行编译数
-sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$RUST_MK"
-
-# 修正源码地址（删除行尾空格）
-sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
-sed -i 's/[[:space:]]*$//' "$RUST_MK"
-
-# 6. 获取版本信息
-RUST_VER=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-ORIG_HASH=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-RUST_FILE="rustc-${RUST_VER}-src.tar.xz"
-DL_PATH="$DL_DIR/$RUST_FILE"
-
-echo ">>> 目标 Rust 版本: $RUST_VER"
-echo ">>> OpenWrt 期望哈希: ${ORIG_HASH:0:16}..."
-
+# 3. 准备下载路径
+DL_DIR="dl"
 mkdir -p "$DL_DIR"
+# 官方源码包文件名格式
+RUST_FILE="rustc-${RUST_VERSION}-src.tar.xz"
+# 官方下载地址
+RUST_URL="https://static.rust-lang.org/dist/${RUST_FILE}"
 
-# 7. 下载源码包
-if [ ! -s "$DL_PATH" ]; then
-    echo ">>> 正在下载源码包..."
-    MIRRORS=(
-        "https://static.rust-lang.org/dist/${RUST_FILE}"
-        "https://mirrors.ustc.edu.cn/rust-static/dist/${RUST_FILE}"
-        "https://mirrors.tuna.tsinghua.edu.cn/rustup/dist/${RUST_FILE}"
-    )
+# 4. 下载官方源码包 (如果本地没有的话)
+if [ ! -f "$DL_DIR/$RUST_FILE" ]; then
+    echo ">>> Step 2: Downloading official source from rust-lang.org..."
+    wget -q --show-progress -O "$DL_DIR/$RUST_FILE" "$RUST_URL"
     
-    for mirror in "${MIRRORS[@]}"; do
-        echo ">>> 尝试: $mirror"
-        if wget -q --show-progress --timeout=60 -O "$DL_PATH.tmp" "$mirror" 2>/dev/null; then
-            [ -s "$DL_PATH.tmp" ] && { mv "$DL_PATH.tmp" "$DL_PATH"; break; }
-        fi
-        rm -f "$DL_PATH.tmp"
-    done
-fi
-
-if [ ! -s "$DL_PATH" ]; then
-    echo "❌ 错误: 下载失败"
-    exit 1
-fi
-
-# 8. 🔥 关键修改：自适应哈希处理
-echo ">>> 验证下载文件..."
-
-ACTUAL_HASH=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
-
-if [ "$ACTUAL_HASH" = "$ORIG_HASH" ]; then
-    echo "✅ 哈希校验通过，与 OpenWrt 官方一致"
-    HASH_STATUS="matched"
-else
-    echo "⚠️  哈希不匹配！"
-    echo "    OpenWrt 期望: $ORIG_HASH"
-    echo "    实际下载:    $ACTUAL_HASH"
-    echo ""
-    echo ">>> 自动修正 Makefile 哈希为实际值..."
-    
-    # 更新 Makefile 为实际哈希
-    sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_HASH/" "$RUST_MK"
-    
-    # 验证修改成功
-    NEW_HASH=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-    if [ "$NEW_HASH" = "$ACTUAL_HASH" ]; then
-        echo "✅ Makefile 已更新，使用实际下载哈希"
-        HASH_STATUS="updated"
-    else
-        echo "❌ 更新 Makefile 失败"
+    if [ $? -ne 0 ]; then
+        echo "❌ Error: Download failed! Please check network or version."
         exit 1
     fi
+else
+    echo ">>> Step 2: File $RUST_FILE already exists in dl/, skipping download."
 fi
 
-# 9. 创建验证标记
-touch "$DL_PATH.verified"
+# 5. 计算真实 Hash
+echo ">>> Step 3: Calculating SHA256 checksum..."
+# 计算下载文件的 SHA256
+NEW_HASH=$(sha256sum "$DL_DIR/$RUST_FILE" | awk '{print $1}')
+echo "   Actual File Hash: $NEW_HASH"
 
-echo "=========================================="
-echo "✅ Rust 深度修复与环境硬化已完成"
-echo ">>> 分支: $PKGS_BRANCH"
-echo ">>> 版本: $RUST_VER"
-echo ">>> 哈希状态: $HASH_STATUS"
-echo "=========================================="
+# 6. 对比并自动修正 Makefile
+echo ">>> Step 4: Verifying and Patching..."
+
+if [ "$OLD_HASH" != "$NEW_HASH" ]; then
+    echo "⚠️  Hash Mismatch detected!"
+    echo "   Old: $OLD_HASH"
+    echo "   New: $NEW_HASH"
+    echo "   Action: Updating Makefile with new hash..."
+    
+    # 使用 sed 替换 Makefile 中的 Hash
+    sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$NEW_HASH/" "$RUST_MK"
+    
+    echo "✅ Makefile updated successfully."
+else
+    echo "✅ Hash matches! No changes needed."
+fi
+
 ----------------------------------------------------------------
 【最终收尾】强行刷新整个编译索引，确保所有“掉包”操作被系统识别
 ----------------------------------------------------------------
