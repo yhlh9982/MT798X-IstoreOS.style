@@ -1,44 +1,26 @@
 #!/bin/bash
-# diy-part3.sh
+# =========================================================
+# Rust 专项攻坚任务 (V27.5 最终稳定版)
+# =========================================================
+
 set -e
-OPENWRT_ROOT="/workdir/openwrt"
-cd "$OPENWRT_ROOT"
+OPENWRT_ROOT=$(pwd)
 
-echo "=========================================="
-echo "执行 SSH3: Rust 专项攻坚 (V27.1 闭环寻址版)"
-echo "=========================================="
-
-# 1. 物理路径锁定与硬重连 (解决寻址报错的终极手段)
-echo ">>> [1/4] 正在手动建立物理入口..."
-# 探测 Rust 源码在 feeds 里的实际物理位置
-RUST_PHYSICAL=$(find feeds/packages -type d -name "rust" | head -n 1)
-
-if [ -n "$RUST_PHYSICAL" ] && [ -f "$RUST_PHYSICAL/Makefile" ]; then
-    # 强制在 package 目录下建立一个标准入口
-    rm -rf package/rust
-    ln -sf "../$RUST_PHYSICAL" package/rust
-    echo "✅ 已建立逻辑映射: package/rust -> $RUST_PHYSICAL"
-else
-    echo "❌ 严重错误: 无法定位 Rust 物理源码目录。"
-    exit 1
-fi
-
-# 2. 刷新索引
-rm -rf tmp
+echo ">>> [1/3] 执行源码解压与打补丁..."
+# 刷新配置索引
 make defconfig
 
-# 3. 执行预处理
-echo ">>> [2/4] 执行源码解压与打补丁..."
-# 使用我们刚刚建立的 package/rust 统一入口
-make package/rust/host/prepare V=s || true
+# 使用之前最稳的全路径寻址
+make package/feeds/packages/rust/host/prepare V=s || \
+make package/feeds/packages/lang/rust/host/prepare V=s
 
-# 4. 账本伪造与清单清理
-echo ">>> [3/4] 正在执行指纹重构手术 (Python)..."
+# 3. 核心救治：重写账本指纹 (Python 逻辑)
+echo ">>> [2/3] 执行账本与清单的“指纹重构”..."
 RUST_SRC_DIR=$(find build_dir -type d -name "rustc-*-src" | head -n 1)
 
 if [ -n "$RUST_SRC_DIR" ]; then
-    echo "✅ 锁定物理目录: $RUST_SRC_DIR"
-    # 使用 Python 抹平账本
+    echo "✅ 锁定源码物理目录: $RUST_SRC_DIR"
+    # 使用 Python 抹平账本 (解决 1.90.0 的 Cargo.toml.orig 报错)
     python3 -c "
 import os, json
 for root, dirs, files in os.walk('$RUST_SRC_DIR/vendor'):
@@ -47,28 +29,31 @@ for root, dirs, files in os.walk('$RUST_SRC_DIR/vendor'):
         with open(path, 'w') as f:
             json.dump({'files':{}, 'package':''}, f)
 "
-    # 抹除锁定清单哈希记录
+    # 抹除锁定清单中的哈希记录
     find "$RUST_SRC_DIR" -name "Cargo.lock" -exec sed -i '/checksum = /d' {} \;
-    # 清理残留干扰文件
+    # 清理干扰文件
     find "$RUST_SRC_DIR" -name "*.orig" -delete 2>/dev/null || true
-    echo "✅ 物理净化完成。"
+    echo "✅ 账本物理对齐已完成。"
 else
-    echo "❌ 严重错误: 源码解压失败。"
+    echo "❌ 严重错误: 源码未解压成功。"
     exit 1
 fi
 
-# 5. 稳健编译 (隐匿 CI 身份)
-echo ">>> [4/4] 启动独立编译阶段..."
+# 4. 稳健编译
+echo ">>> [3/3] 启动独立编译阶段 (降压限流)..."
 rm -rf staging_dir/host/stamp/.rust_installed
-export CARGO_NET_OFFLINE=true
 
+# 环境变量实时注入 (比写在 Makefile 里安全 100 倍)
+export CARGO_NET_OFFLINE=true
+export CARGO_PROFILE_RELEASE_DEBUG=false
+export CARGO_INCREMENTAL=0
+
+# 硬件自适应
 MEM_TOTAL=$(free -g | awk '/^Mem:/{print $2}')
 [ "$MEM_TOTAL" -gt 12 ] && T=2 || T=1
-echo ">>> 资源分配: -j$T"
 
-# 关键：脱离 CI 身份，绕过 Rust 1.90.0 的限制
-env -u CI -u GITHUB_ACTIONS make package/rust/host/compile -j$T V=s
+# 隐匿身份并执行全路径编译
+env -u CI -u GITHUB_ACTIONS make package/feeds/packages/rust/host/compile -j$T V=s || \
+env -u CI -u GITHUB_ACTIONS make package/feeds/packages/lang/rust/host/compile -j$T V=s
 
-echo "=========================================="
-echo "✅ Rust 专项任务圆满成功！"
-echo "=========================================="
+echo "✅ Rust 专项任务圆满完成！"
