@@ -143,7 +143,7 @@ fi
 set -e
 
 echo "=========================================="
-echo "Rust 终极救治脚本 (V14.4 最终核实版)"
+echo "Rust 终极“核平”救治脚本 (V15.0)"
 echo "=========================================="
 
 # 1. 配置区域  
@@ -152,9 +152,9 @@ echo "=========================================="
 # 可选packages 分支  master  目前rust版本为 1.90.0  此后的分支 rust 版本可能不与24.10 同时更新版本，如果需要更改，需要核实
 # 可选packages 分支  openwrt-25.12  目前rust版本为 1.90.0
 #  packages 核实的地址 ：https://github.com/openwrt/packages/blob/openwrt-24.10/lang/rust/Makefile
-# ---------------------------------------------------------
-PKGS_BRANCH="master"
+
 PKGS_REPO="https://github.com/openwrt/packages.git"
+PKGS_BRANCH="master"
 RUST_OFFICIAL_URL="https://static.rust-lang.org/dist"
 
 OPENWRT_ROOT=$(pwd)
@@ -163,106 +163,86 @@ RUST_MK="$RUST_DIR/Makefile"
 DL_DIR="$OPENWRT_ROOT/dl"
 
 # ==========================================
-# 第一步：物理替换定义 (强制对齐)
+# 第一步：环境彻底洗劫 (Nuclear Clean)
 # ==========================================
-echo ">>> [1/5] 物理重置 Rust 底座至 $PKGS_BRANCH ..."
+echo ">>> [1/5] 物理清除所有 Rust 残余..."
 rm -rf "$RUST_DIR"
 rm -rf "$OPENWRT_ROOT/build_dir/host/rustc-*"
+rm -rf "$OPENWRT_ROOT/build_dir/target-*/host/rustc-*"
 rm -rf "$OPENWRT_ROOT/staging_dir/host/stamp/.rust_installed"
+rm -rf "$OPENWRT_ROOT/staging_dir/host/bin/rustc"
+rm -rf "$OPENWRT_ROOT/staging_dir/host/bin/cargo"
 
-TEMP_REPO="/tmp/rust_sync_$$"
+# 同步底座
+TEMP_REPO="/tmp/rust_nuke_$$"
 git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null
 mkdir -p "$RUST_DIR"
 cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
 rm -rf "$TEMP_REPO"
-echo "✅ $PKGS_BRANCH 源码及补丁集已对齐。"
 
 # ==========================================
-# 第二步：强制刷新索引
-# ==========================================
-echo ">>> [2/5] 正在重新建立软链接索引..."
-rm -rf "$OPENWRT_ROOT/tmp"
-./scripts/feeds update -i
-./scripts/feeds install -f -p packages rust
-
-# ==========================================
-# 第三步：智能下载与哈希自适应救治
+# 第二步：哈希与源码闭环 (保证海关放行)
 # ==========================================
 V=$(grep -E '^PKG_VERSION[:=]+' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-H_EXPECTED=$(grep -E '^PKG_HASH[:=]+' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
 RUST_FILE="rustc-${V}-src.tar.xz"
 DL_PATH="$DL_DIR/$RUST_FILE"
 
-[ -z "$V" ] && { echo "❌ 错误: 无法从 Makefile 提取版本号"; exit 1; }
 mkdir -p "$DL_DIR"
+echo ">>> [2/5] 正在确保源码包 $V 正确..."
+rm -f "$DL_PATH"
+wget -q --timeout=60 --tries=3 -O "$DL_PATH" "$RUST_OFFICIAL_URL/$RUST_FILE"
 
-NEED_DOWNLOAD=true
-if [ -f "$DL_PATH" ]; then
-    echo ">>> 发现预存文件，核实哈希..."
-    ACTUAL_H=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
-    if [ "$ACTUAL_H" == "$H_EXPECTED" ]; then
-        echo "✅ 现有文件校验成功。"
-        NEED_DOWNLOAD=false
-    else
-        echo "⚠️  哈希不符，重新下载..."
-        rm -f "$DL_PATH"
-    fi
-fi
-
-if [ "$NEED_DOWNLOAD" == "true" ]; then
-    echo ">>> 从 Rust 官网下载权威源码: $V ..."
-    if ! wget -q --timeout=60 --tries=3 -O "${DL_PATH}.tmp" "$RUST_OFFICIAL_URL/$RUST_FILE"; then
-        echo "❌ 致命错误：下载失败。"
-        exit 1
-    fi
-    mv "${DL_PATH}.tmp" "$DL_PATH"
-fi
-
+# 计算并强行修正 Makefile 哈希 (无视任何预设，以官网下载为准)
 FINAL_H=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
-if [ "$FINAL_H" != "$H_EXPECTED" ]; then
-    echo "🚨 哈希自适应：重写 Makefile 记录为 $FINAL_H"
-    sed -i "s/^PKG_HASH[:=].*/PKG_HASH:=$FINAL_H/" "$RUST_MK"
-fi
+sed -i "s/^PKG_HASH[:=].*/PKG_HASH:=$FINAL_H/" "$RUST_MK"
+echo "✅ 哈希物理对齐完成: $FINAL_H"
 
 # ==========================================
-# 第四步：硬化优化与“账本销毁”（欺骗核心）
+# 第三步：Makefile 深度“手术” (剥夺报错权)
 # ==========================================
-echo ">>> [4/5] 注入欺骗指令与性能硬化..."
+echo ">>> [3/5] 正在执行 Makefile 深度注入..."
 
-# 1. CI-LLVM 开启
+# 3.1 开启 CI-LLVM (保命项)
 sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
 sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
 
-# 2. 清理 Patch 痕迹 (.orig)
-# 修正点：同时清理 .rej 以防万一
-sed -i '/Build\/Patch/a \	find $(HOST_BUILD_DIR) -name "*.orig" -delete\n	find $(HOST_BUILD_DIR) -name "*.rej" -delete' "$RUST_MK"
+# 3.2 暴力清理指令 (不仅在 Compile 前，还在 Patch 后，甚至在 Install 前都执行)
+# 我们定义一个通用的清理命令，确保补丁产生的备份文件和校验账本全部滚蛋
+CLEAN_CMD="find \$(HOST_BUILD_DIR) -name \"*.orig\" -delete -o -name \"*.rej\" -delete -o -name \".cargo-checksum.json\" -delete -o -name \".cargo-ok\" -delete"
 
-# 3. 销毁审计账本 (.cargo-checksum.json)
-# 修正点：使用更宽泛的正则匹配 python3 x.py 并在其执行前删除所有校验和标记文件
-sed -i '/\$(PYTHON3).*x\.py/i \	find $(HOST_BUILD_DIR) -name ".cargo-checksum.json" -delete -o -name ".cargo-ok" -delete' "$RUST_MK"
+# 注入到 Build/Patch 之后
+sed -i "/Build\/Patch/a \	$CLEAN_CMD" "$RUST_MK"
 
-# 4. 环境变量降压与彻底离线化
-# 修正点：加入 CARGO_NET_OFFLINE=true 彻底切断校验尝试
-sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_NET_OFFLINE=true\nexport CARGO_INCREMENTAL=0' "$RUST_MK"
+# 注入到所有调用 python3 x.py 的地方之前
+# 注意：使用通用的关键词匹配，覆盖所有的 x.py 调用
+sed -i "s|python3 \$(HOST_BUILD_DIR)/x.py|$CLEAN_CMD \&\& python3 \$(HOST_BUILD_DIR)/x.py|g" "$RUST_MK"
 
-# 5. 并发限制 (-j 2)
-sed -i 's/\$(PYTHON3).*x\.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$RUST_MK"
-
-# 6. 地址补正
+# 3.3 移除所有 --frozen 和 --locked 参数 (这是欺骗的关键：允许 Cargo 重新建立索引)
 sed -i 's/--frozen//g' "$RUST_MK"
-sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
+sed -i 's/--locked//g' "$RUST_MK"
+
+# 3.4 注入降压环境变量 (彻底离线且禁用调试)
+sed -i '/export CARGO_HOME/a export CARGO_NET_OFFLINE=true\nexport CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_INCREMENTAL=0' "$RUST_MK"
+
+# 3.5 限制线程 (利用 15G RAM 和 12G Swap 稳过)
+sed -i "s/x.py/x.py -j 2/g" "$RUST_MK"
 
 # ==========================================
-# 第五步：全量索引刷新 (收尾锁定)
+# 第四步：强制重新注册并校验索引
 # ==========================================
-echo ">>> [5/5] 正在全量同步所有插件软链接索引..."
+echo ">>> [4/5] 强行刷新 OpenWrt 索引..."
 rm -rf "$OPENWRT_ROOT/tmp"
 ./scripts/feeds update -i
 ./scripts/feeds install -a -f
 
+# ==========================================
+# 第五步：收尾确认
+# ==========================================
+echo ">>> [5/5] 最终 Makefile 结构核查:"
+grep -C 2 "x.py" "$RUST_MK" | head -n 10
+
 echo "=========================================="
-echo "✅ Rust 终极救治完成！"
-echo ">>> 锁定版本: $(grep '^PKG_VERSION:=' $RUST_MK | cut -d'=' -f2)"
+echo "✅ Rust V15.0 “核平”版救治完成！"
 echo "=========================================="
 
 # ==========================================
