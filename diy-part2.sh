@@ -73,17 +73,18 @@ grep -rl '"parent": "luci.services"' package/tailscale 2>/dev/null | xargs sed -
 grep -rl "admin/services/ksmbd" feeds package 2>/dev/null | xargs sed -i 's|admin/services/ksmbd|admin/nas/ksmbd|g' 2>/dev/null || true
 grep -rl '"parent": "luci.services"' feeds package 2>/dev/null | xargs sed -i 's/"parent": "luci.services"/"parent": "luci.nas"/g' 2>/dev/null || true
 
-# =========================================================
-# Rust 专项：回滚底座与哈希校准 (SSH2 部分)
-# =========================================================
-echo ">>> [Rust] 正在同步底座并执行基础配置..."
+#!/bin/bash
+# diy-part2.sh
 
-PKGS_BRANCH="master" # 可根据需要改为 openwrt-23.05
+# ... (前面的插件替换逻辑保持不变) ...
+
+# 4. Rust 专项：锁定底座与物理哈希校准
+echo ">>> [Rust] 正在物理同步分支底座..."
+PKGS_BRANCH="master" 
 PKGS_REPO="https://github.com/openwrt/packages.git"
 RUST_DIR="feeds/packages/lang/rust"
 RUST_MK="$RUST_DIR/Makefile"
 
-# 1. 物理同步 (确保 Makefile 和补丁配套)
 rm -rf "$RUST_DIR"
 rm -rf build_dir/host/rustc-*
 rm -rf staging_dir/host/stamp/.rust_installed
@@ -93,34 +94,33 @@ if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; 
     mkdir -p "$RUST_DIR"
     cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
     rm -rf "$TEMP_REPO"
-    echo "✅ Rust 底座同步成功。"
+    echo "✅ Rust 底座对齐成功。"
 fi
 
-# 2. 极简硬化 Makefile (仅修改值，不注入新行)
 if [ -f "$RUST_MK" ]; then
-    # 修正 LLVM 为 if-unchanged (绕过 Rust 1.90 的 CI 限制)
+    echo ">>> [Rust] 仅修改 Makefile 配置项，不注入环境变量..."
+    # A. 修正 LLVM 绕过 CI 限制 (仅改值)
     sed -i 's/download-ci-llvm:=.*/download-ci-llvm:="if-unchanged"/g' "$RUST_MK"
     sed -i 's/download-ci-llvm=.*/download-ci-llvm="if-unchanged"/g' "$RUST_MK"
     
-    # 物理哈希校准 (自适应官方镜像)
+    # B. 哈希物理对齐
     V=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
     mkdir -p dl
     wget -q --timeout=30 -O "dl/rustc-${V}-src.tar.xz" "https://static.rust-lang.org/dist/rustc-${V}-src.tar.xz" || true
     if [ -s "dl/rustc-${V}-src.tar.xz" ]; then
         ACTUAL_H=$(sha256sum "dl/rustc-${V}-src.tar.xz" | cut -d' ' -f1)
         sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
-        echo "✅ 哈希校准完成: $ACTUAL_H"
     fi
 
-    # 移除锁定参数
+    # C. 修正地址并取消锁定 (不插入 export 行，防止 @ 报错)
+    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
     sed -i 's/--frozen//g' "$RUST_MK"
     sed -i 's/--locked//g' "$RUST_MK"
 fi
 
-# 3. 强制刷新索引 (关键：确保 SSH3 寻址正常)
-echo "🔄 正在刷新全系统索引..."
+# 5. 索引刷新
+echo ">>> [Rust] 强制刷新软链接索引..."
 rm -rf tmp
-# 物理清理可能存在的坏链接
 find package/feeds -name "rust" -type l -exec rm -f {} \;
 ./scripts/feeds update -i
 ./scripts/feeds install -a -f
