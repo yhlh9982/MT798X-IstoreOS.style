@@ -73,11 +73,6 @@ grep -rl '"parent": "luci.services"' package/tailscale 2>/dev/null | xargs sed -
 grep -rl "admin/services/ksmbd" feeds package 2>/dev/null | xargs sed -i 's|admin/services/ksmbd|admin/nas/ksmbd|g' 2>/dev/null || true
 grep -rl '"parent": "luci.services"' feeds package 2>/dev/null | xargs sed -i 's/"parent": "luci.services"/"parent": "luci.nas"/g' 2>/dev/null || true
 
-#!/bin/bash
-# diy-part2.sh
-
-# ... (前面的插件替换逻辑保持不变) ...
-
 # 4. Rust 专项：锁定底座与物理哈希校准
 echo ">>> [Rust] 正在物理同步分支底座..."
 PKGS_BRANCH="master" 
@@ -103,20 +98,38 @@ if [ -f "$RUST_MK" ]; then
     sed -i 's/download-ci-llvm:=.*/download-ci-llvm:="if-unchanged"/g' "$RUST_MK"
     sed -i 's/download-ci-llvm=.*/download-ci-llvm="if-unchanged"/g' "$RUST_MK"
     
-    # B. 哈希物理对齐
+# B. 哈希物理对齐 (自适应校验)
     V=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+    # 提取 Makefile 中现有的预期哈希
+    EXPECTED_H=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+    
     mkdir -p dl
-    wget -q --timeout=30 -O "dl/rustc-${V}-src.tar.xz" "https://static.rust-lang.org/dist/rustc-${V}-src.tar.xz" || true
-    if [ -s "dl/rustc-${V}-src.tar.xz" ]; then
-        ACTUAL_H=$(sha256sum "dl/rustc-${V}-src.tar.xz" | cut -d' ' -f1)
-        sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
+    RUST_FILE="dl/rustc-${V}-src.tar.xz"
+
+    echo ">>> [Rust] 正在核实源码包哈希: $V"
+    
+    # 下载源码包 (如果本地不存在)
+    if [ ! -s "$RUST_FILE" ]; then
+        wget -q --timeout=30 -O "$RUST_FILE" "https://static.rust-lang.org/dist/rustc-${V}-src.tar.xz" || true
     fi
 
-    # C. 修正地址并取消锁定 (不插入 export 行，防止 @ 报错)
-    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
-    sed -i 's/--frozen//g' "$RUST_MK"
-    sed -i 's/--locked//g' "$RUST_MK"
-fi
+    if [ -s "$RUST_FILE" ]; then
+        # 计算下载到的物理文件哈希
+        ACTUAL_H=$(sha256sum "$RUST_FILE" | cut -d' ' -f1)
+        
+        if [ "$ACTUAL_H" != "$EXPECTED_H" ]; then
+            echo "⚠️  哈希不匹配！"
+            echo "    物理文件: $ACTUAL_H"
+            echo "    Makefile: $EXPECTED_H"
+            echo ">>> 正在修正 Makefile 以适配物理文件..."
+            sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
+            echo "✅ 哈希已强制对齐。"
+        else
+            echo "✅ 哈希校验一致 ($ACTUAL_H)，无需修改 Makefile。"
+        fi
+    else
+        echo "❌ 错误: 无法获取源码包，跳过哈希校准。"
+    fi
 
 # 5. 索引刷新
 echo ">>> [Rust] 强制刷新软链接索引..."
