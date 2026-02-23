@@ -148,33 +148,46 @@ fi
 #  packages 核实的地址 ：https://github.com/openwrt/packages/blob/openwrt-24.10/lang/rust/Makefile
 
 # =========================================================
-# Rust 深度救治 (SSH2 简化稳健版)
+# Rust 深度救治 
 # =========================================================
-echo ">>> [Rust] 正在同步底座并校准哈希..."
+echo ">>> [Rust] 正在同步底座并校准定义..."
 
-# 1. 锁定分支 (建议根据你的 OpenWrt 版本选择 openwrt-23.05 或 24.10)
+# 1. 锁定分支 (保持 master 以获取最新 1.90.0，或改 openwrt-23.05 以求稳)
 PKGS_BRANCH="master"
 PKGS_REPO="https://github.com/openwrt/packages.git"
 RUST_DIR="feeds/packages/lang/rust"
 RUST_MK="$RUST_DIR/Makefile"
 
 # 2. 物理同步 (确保 Makefile 和补丁配套)
+# 增加对 build_dir 的预清理，防止不同版本的 Rust 缓存冲突
 rm -rf "$RUST_DIR"
+rm -rf build_dir/host/rustc-*
+rm -rf staging_dir/host/stamp/.rust_installed
+
 TEMP_REPO="/tmp/rust_sync_$$"
 git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null
 mkdir -p "$RUST_DIR"
 cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
 rm -rf "$TEMP_REPO"
 
-# 3. 开启 CI-LLVM 预编译支持 (核心优化)
+# 3. 开启 CI-LLVM 预编译支持与硬化配置
 if [ -f "$RUST_MK" ]; then
+    # A. 开启 CI-LLVM (Actions 环境必开)
     sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
     sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
+    
+    # B. 移除冻结参数，允许我们的 YAML 脚本修改源码
     sed -i 's/--frozen//g' "$RUST_MK"
+    sed -i 's/--locked//g' "$RUST_MK"
+    
+    # C. 修正官方分发地址
     sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
+    
+    # D. 注入降压环境变量 (作为 YAML 之外的双重保险)
+    sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_NET_OFFLINE=true' "$RUST_MK"
 fi
 
-echo "✅ SSH2 Rust 配置完成 (已开启 CI-LLVM)。"
+echo "✅ Rust 配置完成。"
 
 # 修改默认 IP (192.168.30.1)
 sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
