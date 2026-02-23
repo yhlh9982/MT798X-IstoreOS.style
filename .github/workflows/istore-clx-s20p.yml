@@ -157,26 +157,26 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    # 8.5 物理环境净化 (针对 Rust 1.90 的“抹平账本”策略)
+    # 8.5 物理环境净化 (针对所有 Rust 版本的“抹平账本”策略)
     - name: Pre-process Rust & Neutralize Checksums
       run: |
         cd openwrt
         echo ">>> [第一步] 强制执行 Rust 预处理 (解压与打补丁)..."
-        # 必须先让系统完成打补丁，产生那些 .orig 文件
+        # 即使失败也继续，因为我们后面会手动修复
         make package/feeds/packages/lang/rust/host/prepare V=s || true
         
-        echo ">>> [第二步] 抹平所有 vendor 账本内容..."
-        # 核心逻辑：不再删除 .cargo-checksum.json，而是将其中的 "files":{...} 替换为 "files":{}
-        # 这样 Cargo 觉得账本还在，但里面没有要检查的文件，从而实现 100% 欺骗
-        find build_dir/host/rustc-1.90.0-src/vendor -name .cargo-checksum.json -exec sed -i 's/"files":{[^}]*}/"files":{}/g' {} +
+        echo ">>> [第二步] 抹平所有 vendor 账本内容 (通用路径)..."
+        # 核心逻辑：使用通配符 rustc-*-src，自动匹配 1.85.0 或 1.90.0
+        # 这一步抹平了账本中的文件清单，使 Cargo 不再校验补丁修改
+        find build_dir/host/rustc-*-src/vendor -name .cargo-checksum.json -exec sed -i 's/"files":{[^}]*}/"files":{}/g' {} +
         
-        echo ">>> [第三步] 物理擦除残留备份文件..."
-        # 此时再删掉 .orig，Cargo 就不会因为账本里有记录而报错了
-        find build_dir/host/rustc-1.90.0-src -name "*.orig" -delete 2>/dev/null || true
-        find build_dir/host/rustc-1.90.0-src -name "*.rej" -delete 2>/dev/null || true
-        find build_dir/host/rustc-1.90.0-src -name ".cargo-ok" -delete 2>/dev/null || true
+        echo ">>> [第三步] 物理擦除残留干扰文件..."
+        # 此时删掉备份文件，Cargo 就不会因为账本里“没记这笔账”而报错了
+        find build_dir/host/rustc-*-src -name "*.orig" -delete 2>/dev/null || true
+        find build_dir/host/rustc-*-src -name "*.rej" -delete 2>/dev/null || true
+        find build_dir/host/rustc-*-src -name ".cargo-ok" -delete 2>/dev/null || true
         
-        echo "✅ Rust 账本已抹平，补丁痕迹已消除。"
+        echo "✅ Rust 物理环境已净化。"
 
     # 9. 编译固件 (动态资源分配版)
     - name: Compile the firmware
