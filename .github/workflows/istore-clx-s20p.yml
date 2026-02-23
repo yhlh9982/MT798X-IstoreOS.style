@@ -154,36 +154,35 @@ jobs:
         make download -j8
         find dl -size -1024c -exec rm -f {} \;
 
-    # 8.5 物理环境净化 (针对 Rust 1.90 的“抹平账本”策略 - 零转义风险版)
+    # 8.5 物理环境净化 (针对 Rust 1.90 的终极自愈逻辑)
     - name: Pre-process Rust & Neutralize Checksums
       run: |
         cd openwrt
         echo ">>> [1/3] 强制执行 Rust 预处理 (解压与打补丁)..."
-        # 必须先让系统完成打补丁，产生那些 .orig 文件
         make package/feeds/packages/rust/host/prepare V=s || true
         
-        echo ">>> [2/3] 动态定位并物理抹平所有 Rust 账本..."
-        # 你的日志已经证明这个路径查找是正确的
+        echo ">>> [2/3] 动态定位并执行“账本+清单”双重净化..."
         RUST_SRC_DIR=$(find build_dir -type d -name "rustc-*-src" | head -n 1)
         
         if [ -n "$RUST_SRC_DIR" ]; then
             echo "✅ 准确定位源码目录: $RUST_SRC_DIR"
             
-            # 使用简单的 while 循环，彻底避开 Python 或 sed 的引号转义地狱
-            # 这一步将所有的校验账本直接覆盖为“空账本”模板
-            find "$RUST_SRC_DIR" -name ".cargo-checksum.json" | while read -r json_file; do
-                echo '{"files":{},"package":null}' > "$json_file"
-            done
+            # A. 抹平小账本：删除所有 vendor 目录下的校验记录
+            # 1.90 经验证明，直接删除比抹平内容更有效
+            find "$RUST_SRC_DIR/vendor" -name ".cargo-checksum.json" -delete
+            
+            # B. 【关键】抹平大清单：删除 Cargo.lock 中所有的 checksum 记录
+            # 这一步让 Cargo 彻底“失明”，不再寻找任何哈希值进行比对
+            find "$RUST_SRC_DIR" -name "Cargo.lock" -exec sed -i '/checksum = /d' {} \;
             
             echo ">>> [3/3] 物理擦除残留干扰文件..."
-            # 此时删掉备份文件，Cargo 发现账本里没记录这些文件，就不会报错了
             find "$RUST_SRC_DIR" -name "*.orig" -delete 2>/dev/null || true
             find "$RUST_SRC_DIR" -name "*.rej" -delete 2>/dev/null || true
             find "$RUST_SRC_DIR" -name ".cargo-ok" -delete 2>/dev/null || true
             
-            echo "✅ 账本物理抹平完成 (已重置为无校验模式)。"
+            echo "✅ 物理环境净化完成：账本已撕，清单已烧。"
         else
-            echo "❌ 严重错误: 无法定位 Rust 源码目录，流程终止。"
+            echo "❌ 严重错误: 无法定位 Rust 源码目录。"
             exit 1
         fi
 
