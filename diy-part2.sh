@@ -141,38 +141,39 @@ if [ -n "$KSMBD_FILES" ]; then
 fi
 
 # ---------------------------------------------------------
-# 6. Rust 专项：锁定底座与物理哈希校准 (V13.2 救治逻辑)
+# 5. Rust 专项救治逻辑 (V13.2 对齐版)
 # ---------------------------------------------------------
-echo ">>> [5/7] 正在物理同步 Rust 分支底座..."
+set -e
+echo ">>> [Rust] 正在同步底座与校准哈希..."
+
 PKGS_BRANCH="master" 
 PKGS_REPO="https://github.com/openwrt/packages.git"
 RUST_DIR="feeds/packages/lang/rust"
 RUST_MK="$RUST_DIR/Makefile"
 
+# 物理同步
 rm -rf "$RUST_DIR"
 rm -rf build_dir/host/rustc-*
 rm -rf staging_dir/host/stamp/.rust_installed
 
 TEMP_REPO="/tmp/rust_sync_$$"
-if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; then
-    mkdir -p "$RUST_DIR"
-    cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
-    rm -rf "$TEMP_REPO"
-    echo "✅ Rust 底座对齐成功。"
-fi
+git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null
+mkdir -p "$RUST_DIR"
+cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
+rm -rf "$TEMP_REPO"
 
 if [ -f "$RUST_MK" ]; then
     echo ">>> [Rust] 执行哈希自适应与配置硬化..."
-    # A. 修正 LLVM 设置
+    # 修正 LLVM 绕过 CI 限制
     sed -i 's/download-ci-llvm:=.*/download-ci-llvm:="if-unchanged"/g' "$RUST_MK"
     sed -i 's/download-ci-llvm=.*/download-ci-llvm="if-unchanged"/g' "$RUST_MK"
     
-    # B. 哈希物理对齐逻辑
+    # 哈希物理对齐
     V=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
     EXPECTED_H=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-    
     mkdir -p dl
     RUST_FILE="dl/rustc-${V}-src.tar.xz"
+
     if [ ! -s "$RUST_FILE" ]; then
         wget -q --timeout=30 -O "$RUST_FILE" "https://static.rust-lang.org/dist/rustc-${V}-src.tar.xz" || true
     fi
@@ -180,43 +181,33 @@ if [ -f "$RUST_MK" ]; then
     if [ -s "$RUST_FILE" ]; then
         ACTUAL_H=$(sha256sum "$RUST_FILE" | cut -d' ' -f1)
         if [ "$ACTUAL_H" != "$EXPECTED_H" ]; then
-            echo "⚠️ 哈希不匹配，已修正 Makefile 以对齐物理文件。"
+            echo "⚠️ 哈希不匹配，已修正 Makefile 以适配物理文件。"
             sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
-        else
-            echo "✅ 哈希校验完美通过。"
         fi
     fi
 
-    # C. 常规修正
+    # 常规硬化
     sed -i 's/--frozen//g' "$RUST_MK"
     sed -i 's/--locked//g' "$RUST_MK"
     sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
-fi # <--- 修正：这里之前缺失了 fi
+    # 环境变量注入
+    sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_NET_OFFLINE=true' "$RUST_MK"
+fi
 
-# ==========================================
-# 第四步：强制刷新 Feeds 索引 (关键收尾)
-# ==========================================
-echo ">>> [4/5] 强制刷新编译系统索引..."
-# 删除 tmp 目录是让系统识别“掉包”后 Rust 定义的唯一办法
-rm -rf "$OPENWRT_ROOT/tmp"
+# ---------------------------------------------------------
+# 6. 索引强接 (关键收尾)
+# ---------------------------------------------------------
+echo "🔄 正在刷新全系统索引..."
+rm -rf tmp
+# 物理删除旧软链接
+find package/feeds -name "rust" -type l -exec rm -f {} \;
 ./scripts/feeds update -i
-./scripts/feeds install -f -p
+./scripts/feeds install -a -f
 
-# ==========================================
-# 第五步：二次核查并结束
-# ==========================================
-echo ">>> [5/5] 执行最终一致性检查..."
-FINAL_VER=$(grep '^PKG_VERSION:=' "$RUST_MK" | cut -d'=' -f2)
-echo "✅ Rust 锁定版本: $FINAL_VER"
-echo "✅ CI-LLVM 状态: $(grep 'download-ci-llvm' $RUST_MK | head -1)"
-
-echo "=========================================="
-echo "✅ Rust 闭环救治已完成！现在可以开始 make。"
-echo "=========================================="
-
-# 修改默认 IP (192.168.30.1)
+# 修改默认 IP
+# sed -i 's/192.168.1.1/192.168.30.1/g' package/base-files/files/bin/config_generate
 sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
 
 echo "=========================================="
-echo "自定义脚本执行完毕"
+echo "✅ SSH2 整合优化脚本执行完毕"
 echo "=========================================="
