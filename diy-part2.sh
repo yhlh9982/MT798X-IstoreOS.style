@@ -97,9 +97,6 @@ find package/feeds -name "rust" -type l -exec rm -f {} \;
 ./scripts/feeds update -i
 ./scripts/feeds install -a -f
 
-# 执行 defconfig 使新路径被系统大脑( .config )认领
-make defconfig
-
 echo "=========================================="
 echo "✅ SSH2 优化脚本执行完毕"
 echo "=========================================="
