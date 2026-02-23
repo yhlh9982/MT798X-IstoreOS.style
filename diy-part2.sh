@@ -148,10 +148,10 @@ fi
 #  packages 核实的地址 ：https://github.com/openwrt/packages/blob/openwrt-24.10/lang/rust/Makefile
 
 echo "=========================================="
-echo "执行 SSH2: Rust 基础定义与系统定制"
+echo "执行 SSH2: Rust 基础定义与系统定制 (V20.0 对齐版)"
 echo "=========================================="
 
-# 1. 锁定 Rust 底座 (建议根据源码选择 openwrt-23.05 或 master)
+# 1. 锁定 Rust 底座 (保持 master 以获取最新 1.90.0)
 PKGS_BRANCH="master" 
 PKGS_REPO="https://github.com/openwrt/packages.git"
 RUST_DIR="feeds/packages/lang/rust"
@@ -170,16 +170,22 @@ rm -rf "$TEMP_REPO"
 
 # 2. 注入核心硬化指令
 if [ -f "$RUST_MK" ]; then
-    echo ">>> [Rust] 正在开启 CI-LLVM 加速与降压变量..."
-    # 开启 CI-LLVM
-    sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
-    sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
+    echo ">>> [Rust] 正在配置“if-unchanged”模式与降压变量..."
+    
+    # 【关键修改】将 true 修改为 "if-unchanged" 以绕过 Rust 1.90 的 CI 限制
+    # 适配不同 Makefile 写法
+    sed -i 's/download-ci-llvm:=.*/download-ci-llvm:="if-unchanged"/g' "$RUST_MK"
+    sed -i 's/download-ci-llvm=.*/download-ci-llvm="if-unchanged"/g' "$RUST_MK"
+
     # 修正源码镜像地址
     sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
-    # 移除锁定参数，允许我们后续在 SSH3 中物理修改
+    
+    # 移除锁定参数，允许后续在 SSH3 中物理修改源码内容
     sed -i 's/--frozen//g' "$RUST_MK"
     sed -i 's/--locked//g' "$RUST_MK"
-    # 注入降压环境变量 (离线化 + 禁用调试)
+    
+    # 注入降压环境变量 (离线化 + 强制禁用调试信息)
+    # 注意：这里我们预埋了环境变量，进一步降低编译时的内存压力
     sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_NET_OFFLINE=true' "$RUST_MK"
 fi
 
