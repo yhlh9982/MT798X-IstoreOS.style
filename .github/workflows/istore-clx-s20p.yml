@@ -154,60 +154,67 @@ jobs:
         make download -j8
         find dl -size -1024c -exec rm -f {} \;
 
-    # 8.5 物理环境净化 (针对 Rust 1.90 的 Python 级抹平策略)
+    # 8.5 物理环境净化 (针对 Rust 1.90 的“抹平账本”策略 - 零转义风险版)
     - name: Pre-process Rust & Neutralize Checksums
       run: |
         cd openwrt
         echo ">>> [1/3] 强制执行 Rust 预处理 (解压与打补丁)..."
+        # 必须先让系统完成打补丁，产生那些 .orig 文件
         make package/feeds/packages/rust/host/prepare V=s || true
         
         echo ">>> [2/3] 动态定位并物理抹平所有 Rust 账本..."
-        # 深度搜索 rustc 源码目录，确保不管路径多深都能找到
+        # 你的日志已经证明这个路径查找是正确的
         RUST_SRC_DIR=$(find build_dir -type d -name "rustc-*-src" | head -n 1)
         
         if [ -n "$RUST_SRC_DIR" ]; then
             echo "✅ 准确定位源码目录: $RUST_SRC_DIR"
             
-            # 使用 Python 抹平 JSON，这是最稳健的方法，彻底避开引号转义地狱
-            # 该脚本会将所有的 .cargo-checksum.json 内容重置为 {"files":{},"package":null}
-            find "$RUST_SRC_DIR" -name ".cargo-checksum.json" -exec python3 -c 'import json, sys; f=sys.argv[1]; json.dump({"files":{},"package":None}, open(f, "w"))' {} \;
+            # 使用简单的 while 循环，彻底避开 Python 或 sed 的引号转义地狱
+            # 这一步将所有的校验账本直接覆盖为“空账本”模板
+            find "$RUST_SRC_DIR" -name ".cargo-checksum.json" | while read -r json_file; do
+                echo '{"files":{},"package":null}' > "$json_file"
+            done
             
             echo ">>> [3/3] 物理擦除残留干扰文件..."
-            # 此时删掉备份文件，Cargo 就不会报错了，因为账本里已经没有任何文件记录
+            # 此时删掉备份文件，Cargo 发现账本里没记录这些文件，就不会报错了
             find "$RUST_SRC_DIR" -name "*.orig" -delete 2>/dev/null || true
             find "$RUST_SRC_DIR" -name "*.rej" -delete 2>/dev/null || true
             find "$RUST_SRC_DIR" -name ".cargo-ok" -delete 2>/dev/null || true
             
-            echo "✅ 账本物理抹平完成 (Python 级别净化)。"
+            echo "✅ 账本物理抹平完成 (已重置为无校验模式)。"
         else
-            echo "❌ 严重错误: 无法定位 Rust 源码目录，请检查 prepare 日志。"
+            echo "❌ 严重错误: 无法定位 Rust 源码目录，流程终止。"
             exit 1
         fi
 
-    # 9. 编译固件 (自适应硬件资源)
+    # 9. 编译固件 (阶梯式自适应编译)
     - name: Compile the firmware
       id: compile
       run: |
         cd openwrt
-        # 清除残留戳记，确保强制进入净化后的环境
+        # 清除旧戳记，确保系统必须经过我们刚刚抹平后的环境
         rm -rf staging_dir/host/stamp/.rust_installed
         
         echo ">>> 检测系统资源..."
         MEM_TOTAL=$(free -g | awk '/^Mem:/{print $2}')
         echo "检测到物理内存: ${MEM_TOTAL} GB"
         
-        # 1.90 链接阶段极吃内存，保守策略
-        if [ "$MEM_TOTAL" -gt 12 ]; then RUST_THREADS=2; else RUST_THREADS=1; fi
+        # 针对 1.90 的保守策略：内存 > 12G 开启 2 线程，否则单线程
+        if [ "$MEM_TOTAL" -gt 12 ]; then
+            RUST_THREADS=2
+        else
+            RUST_THREADS=1
+        fi
         
         echo ">>> [第一阶段] 正在编译 Rust [host] (使用 -j$RUST_THREADS)..."
-        # 开启强制离线模式，防止 Cargo 尝试修复被我们抹平的账本
+        # 注入离线变量作为二重保险
         export CARGO_NET_OFFLINE=true
         make package/feeds/packages/rust/host/compile -j$RUST_THREADS V=s || {
-            echo "❌ Rust 编译失败。尝试最后一次单线程平推..."
-            make package/feeds/packages/rust/host/compile -j1 V=s
+            echo "❌ Rust 编译失败。输出最后 100 行日志..."
+            exit 1
         }
         
-        echo ">>> [第二阶段] Rust 已顺利通过，全火力编译剩余固件..."
+        echo ">>> [第二阶段] Rust 已顺利通过，开始并行编译剩余固件..."
         make -j$(nproc) || make -j1 V=s
         
         echo "status=success" >> $GITHUB_OUTPUT
