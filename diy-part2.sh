@@ -192,22 +192,20 @@ fi
 # 修改默认 IP (192.168.30.1)
 sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
 
-# 3. 【修正重点】强制重置 Rust 的软链接
-echo "🔄 正在物理强制修复 Rust 索引软链接..."
-# 物理删除 package 目录下的旧链接（防止 feeds 命令跳过已存在的坏链接）
-rm -rf package/feeds/packages/rust
-rm -rf package/feeds/packages/lang/rust
+echo "🔄 正在全盘强制刷新 Rust 软链接与索引..."
+# 1. 物理删除 package 目录下可能存在的旧残余
+find package/feeds -name "rust" -type l -exec rm -f {} \;
 
-# 清理元数据缓存
+# 2. 清理元数据缓存
 rm -rf tmp
 
-# 重新索引并指定安装 rust
+# 3. 强制重新安装并刷新索引
 ./scripts/feeds update -i
-./scripts/feeds install -f -p packages rust
-# 再次执行全量安装以确保依赖链通畅
 ./scripts/feeds install -a -f
 
-echo "✅ SSH2 索引重映射完成。"
+# 4. 关键：执行一次 defconfig，让系统正式承认 Rust 的存在
+make defconfig
+echo "✅ SSH2 链接修复完成。"
 
 echo "=========================================="
 echo "自定义脚本执行完毕"
