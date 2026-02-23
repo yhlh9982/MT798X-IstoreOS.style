@@ -109,12 +109,15 @@ jobs:
         echo "初始磁盘空间:"
         df -hT
 
-    # 3. 克隆源码
-    - name: Clone source code （克隆源码）
-      working-directory: /workdir
+    - name: Clone source code & Setup Base
       run: |
-        df -hT $PWD
-        git clone $REPO_URL -b $REPO_BRANCH --single-branch openwrt
+        sudo mkdir -p /workdir
+        sudo chown $USER:$USER /workdir
+        cd /workdir
+        git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
+        # 将仓库所有内容（含 diy 脚本和 21.02 文件夹）拷贝到源码目录
+        cp -r $GITHUB_WORKSPACE/. /workdir/openwrt/
+        # 建立软链接供 Actions 其它步骤使用
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
     # 4. 加载自定义 Feeds (diy-part1.sh)
@@ -147,37 +150,30 @@ jobs:
       if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
 
     # 8. 下载软件包
-    - name: Download package （下载软件包）
-      id: package
+    - name: Download package
       run: |
         cd openwrt
         make defconfig
         make download -j8
-        find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    # 9. 编译固件 
-    - name: Compile the firmware （编译固件）
+    # 8.5. 执行 Rust 救治与单独编译 (SSH3)
+    - name: Rust Special Attack (Host)
+      run: |
+        chmod +x $DIY_P3_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P3_SH
+
+    # 9. 编译固件 (阶梯式自适应编译)
+    - name: Compile the firmware
       id: compile
       run: |
         cd openwrt
-        echo "开始编译..."
-        df -hT /
-        
-        make -j$(nproc) || make -j1 || make -j1 V=s
-        
-        echo "========================================"
-        echo "固件编译完成"
-        echo "最终磁盘空间:"
-        df -hT /
-        echo "========================================"
+
+        make -j$(nproc) || make -j1 V=s
         
         echo "status=success" >> $GITHUB_OUTPUT
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-
-    - name: Check space usage （编译后容量确认）
-      if: (!cancelled())
-      run: df -hT
 
     # 10. 上传 bin 目录 (Artifacts)
     - name: Upload bin directory （上传 bin 目录）
