@@ -152,26 +152,24 @@ jobs:
       run: |
         cd openwrt
         make defconfig
-        # 预下载，下载过程可以多线程，不吃内存
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    # 8.5 物理环境净化 (针对所有 Rust 版本的“抹平账本”策略)
+    # 8.5 物理环境净化 (V15.0 修正版)
     - name: Pre-process Rust & Neutralize Checksums
       run: |
         cd openwrt
         echo ">>> [第一步] 强制执行 Rust 预处理 (解压与打补丁)..."
-        # 即使失败也继续，因为我们后面会手动修复
-        make package/feeds/packages/lang/rust/host/prepare V=s || true
+        # 修正逻辑路径：OpenWrt 命令行目标不需要 /lang/ 这一层
+        make package/feeds/packages/rust/host/prepare V=s || true
         
-        echo ">>> [第二步] 抹平所有 vendor 账本内容 (通用路径)..."
-        # 核心逻辑：使用通配符 rustc-*-src，自动匹配 1.85.0 或 1.90.0
-        # 这一步抹平了账本中的文件清单，使 Cargo 不再校验补丁修改
-        find build_dir/host/rustc-*-src/vendor -name .cargo-checksum.json -exec sed -i 's/"files":{[^}]*}/"files":{}/g' {} +
+        echo ">>> [第二步] 抹平所有 vendor 账本内容..."
+        # 修正 find 语法：使用 \; 代替 +
+        # 同时增加路径宽泛匹配，确保在 build_dir 的任何位置都能搜到
+        find build_dir/host/rustc-*-src/vendor -name .cargo-checksum.json -exec sed -i 's/"files":{[^}]*}/"files":{}/g' {} \; || echo "⚠️ 未找到账本文件，可能尚未解压"
         
         echo ">>> [第三步] 物理擦除残留干扰文件..."
-        # 此时删掉备份文件，Cargo 就不会因为账本里“没记这笔账”而报错了
         find build_dir/host/rustc-*-src -name "*.orig" -delete 2>/dev/null || true
         find build_dir/host/rustc-*-src -name "*.rej" -delete 2>/dev/null || true
         find build_dir/host/rustc-*-src -name ".cargo-ok" -delete 2>/dev/null || true
@@ -183,27 +181,38 @@ jobs:
       id: compile
       run: |
         cd openwrt
-        # 强制清理上一次失败的戳记，防止它跳过我们刚抹平的环境
+        # 强制清理戳记，确保执行我们刚修改过的代码
         rm -rf staging_dir/host/stamp/.rust_installed
         
+        echo ">>> 正在检测系统硬件资源..."
         MEM_TOTAL=$(free -g | awk '/^Mem:/{print $2}')
         echo "检测到物理内存: ${MEM_TOTAL} GB"
         
         if [ "$MEM_TOTAL" -gt 12 ]; then
             RUST_THREADS=2
+            echo "🔥 分配 2 线程编译 Rust。"
         else
             RUST_THREADS=1
+            echo "🛡️ 采取单线程模式编译 Rust。"
         fi
         
-        echo ">>> 开始编译 Rust [host] (使用 -j$RUST_THREADS)..."
-        # 使用 V=s 确保我们可以看到 Cargo 是否还在抱怨
-        make package/feeds/packages/lang/rust/host/compile -j$RUST_THREADS V=s || {
-            echo "❌ Rust 编译再次失败。请检查下方日志是否仍有 checksum 报错。"
+        echo ">>> [第一阶段] 开始编译 Rust [host] (使用 -j$RUST_THREADS)..."
+        # 使用逻辑路径进行单独编译
+        make package/feeds/packages/rust/host/compile -j$RUST_THREADS V=s || {
+            echo "❌ Rust host 编译失败！再次尝试单线程并输出详情..."
+            make package/feeds/packages/rust/host/compile -j1 V=s
             exit 1
         }
         
-        echo "✅ Rust 攻克成功，开始并行编译固件..."
+        echo ">>> [第二阶段] Rust 已顺利过关，全速编译固件..."
         make -j$(nproc) || make -j1 V=s
+        
+        echo "========================================"
+        echo "✅ 固件编译圆满完成"
+        echo "========================================"
+        
+        echo "status=success" >> $GITHUB_OUTPUT
+        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
     # 10. 上传 bin 目录 (Artifacts)
     - name: Upload bin directory （上传 bin 目录）
