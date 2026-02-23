@@ -176,14 +176,6 @@ fi
 
 echo "✅ SSH2 Rust 配置完成 (已开启 CI-LLVM)。"
 
-# ==========================================
-# 额外：最终一致性核查 (可选，用于在日志中确认)
-# ==========================================
-echo ">>> 最终环境核对:"
-echo "Rust 版本: $(grep '^PKG_VERSION:=' $RUST_MK | cut -d'=' -f2)"
-echo "Golang 路径: $(ls -d feeds/packages/lang/golang 2>/dev/null || echo '缺失')"
-echo "MosDNS 路径: $(find package feeds -name "mosdns" -type d | head -1)"
-
 # 修改默认 IP (192.168.30.1)
 sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
 
