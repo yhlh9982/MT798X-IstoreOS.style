@@ -140,8 +140,6 @@ if [ -n "$KSMBD_FILES" ]; then
     echo "✅ KSMBD 菜单已移动到 NAS"
 fi
 
-set -e
-
 # 1. 配置区域  
 # 可选packages 分支  openwrt-23.05  目前rust版本为 1.85.0 ，为最稳定的版本，但是编译时间会延长
 # 可选packages 分支  openwrt-24.10  目前rust版本为 1.90.0   
@@ -149,100 +147,34 @@ set -e
 # 可选packages 分支  openwrt-25.12  目前rust版本为 1.90.0
 #  packages 核实的地址 ：https://github.com/openwrt/packages/blob/openwrt-24.10/lang/rust/Makefile
 
-echo "=========================================="
-echo "Rust 终极救治脚本 V16.0 (环境隔离版)"
-echo "=========================================="
+# =========================================================
+# Rust 深度救治 (SSH2 简化稳健版)
+# =========================================================
+echo ">>> [Rust] 正在同步底座并校准哈希..."
 
-# 1. 基础配置
+# 1. 锁定分支 (建议根据你的 OpenWrt 版本选择 openwrt-23.05 或 24.10)
+PKGS_BRANCH="master"
 PKGS_REPO="https://github.com/openwrt/packages.git"
-PKGS_BRANCH="master"  # 强制回滚到最稳的补丁集
-RUST_OFFICIAL_URL="https://static.rust-lang.org/dist"
-
-OPENWRT_ROOT=$(pwd)
-RUST_DIR="$OPENWRT_ROOT/feeds/packages/lang/rust"
+RUST_DIR="feeds/packages/lang/rust"
 RUST_MK="$RUST_DIR/Makefile"
-DL_DIR="$OPENWRT_ROOT/dl"
 
-# ==========================================
-# 第一步：彻底物理清洗 (确保无残留)
-# ==========================================
-echo ">>> [1/5] 清洗环境并同步 $PKGS_BRANCH 源码定义..."
+# 2. 物理同步 (确保 Makefile 和补丁配套)
 rm -rf "$RUST_DIR"
-rm -rf "$OPENWRT_ROOT/build_dir/host/rustc-*"
-rm -rf "$OPENWRT_ROOT/staging_dir/host/stamp/.rust_installed"
-# 清除宿主机的 Rust 缓存干扰
-rm -rf "$OPENWRT_ROOT/dl/cargo" 
-
-TEMP_REPO="/tmp/rust_nuke_v16"
+TEMP_REPO="/tmp/rust_sync_$$"
 git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null
 mkdir -p "$RUST_DIR"
 cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
 rm -rf "$TEMP_REPO"
 
-# ==========================================
-# 第二步：物理哈希校准
-# ==========================================
-V=$(grep -E '^PKG_VERSION[:=]+' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-RUST_FILE="rustc-${V}-src.tar.xz"
-DL_PATH="$DL_DIR/$RUST_FILE"
+# 3. 开启 CI-LLVM 预编译支持 (核心优化)
+if [ -f "$RUST_MK" ]; then
+    sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
+    sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
+    sed -i 's/--frozen//g' "$RUST_MK"
+    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
+fi
 
-echo ">>> [2/5] 确保权威源码包下载: $V"
-mkdir -p "$DL_DIR"
-wget -q --timeout=60 --tries=3 -O "$DL_PATH" "$RUST_OFFICIAL_URL/$RUST_FILE"
-
-FINAL_H=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
-sed -i "s/^PKG_HASH[:=].*/PKG_HASH:=$FINAL_H/" "$RUST_MK"
-echo "✅ 哈希物理对齐: $FINAL_H"
-
-# ==========================================
-# 第三步：Makefile 深度硬化（解决 .orig 报错的根源）
-# ==========================================
-echo ">>> [3/5] 正在执行 Makefile 深度“硬化”手术..."
-
-# 1. 核心修复：禁止 patch 工具产生备份文件 (.orig)
-# 这是解决 Cargo 洁癖的最底层手段，直接在 Makefile 头部注入
-sed -i '1i export QUILT_PATCH_OPTS:=--no-backup' "$RUST_MK"
-sed -i '1i export PATCH_GET:=0' "$RUST_MK"
-
-# 2. 开启 CI-LLVM
-sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
-sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
-
-# 3. 注入暴力清理逻辑（覆盖所有关键节点）
-# 定义清理命令
-CLEAN_LOGIC="find \$(HOST_BUILD_DIR) -name \"*.orig\" -delete -o -name \"*.rej\" -delete -o -name \".cargo-checksum.json\" -delete"
-
-# 在打补丁后执行清理
-sed -i "/Build\/Patch/a \	$CLEAN_LOGIC" "$RUST_MK"
-
-# 在执行 python 编译命令前执行清理，并加入 RUST_BACKTRACE 调试
-sed -i "s|python3 \$(HOST_BUILD_DIR)/x.py|export RUST_BACKTRACE=1 \&\& $CLEAN_LOGIC \&\& python3 \$(HOST_BUILD_DIR)/x.py|g" "$RUST_MK"
-
-# 4. 强制单线程编译 (虽然慢，但能看到真实报错，且防止内存崩溃)
-# 先尝试用 -j 1 确保 100% 成功率
-sed -i "s/x.py/x.py -j 1/g" "$RUST_MK"
-
-# 5. 移除限制参数
-sed -i 's/--frozen//g' "$RUST_MK"
-sed -i 's/--locked//g' "$RUST_MK"
-
-# ==========================================
-# 第四步：索引全量重映射
-# ==========================================
-echo ">>> [4/5] 刷新编译索引..."
-rm -rf "$OPENWRT_ROOT/tmp"
-./scripts/feeds update -i
-./scripts/feeds install -a -f
-
-# ==========================================
-# 第五步：错误预警（如果在本地运行，建议直接看输出）
-# ==========================================
-echo ">>> [5/5] Makefile 硬化完成。即将开始的 Rust 编译已处于隔离状态。"
-echo ">>> 如果依然失败，请在 Actions 日志中向上搜索 'error:' 关键字。"
-
-echo "=========================================="
-echo "✅ Rust V16.0 硬化版配置完毕"
-echo "=========================================="
+echo "✅ SSH2 Rust 配置完成 (已开启 CI-LLVM)。"
 
 # ==========================================
 # 额外：最终一致性核查 (可选，用于在日志中确认)
