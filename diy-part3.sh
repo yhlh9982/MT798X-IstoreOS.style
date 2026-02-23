@@ -5,29 +5,32 @@ OPENWRT_ROOT="/workdir/openwrt"
 cd $OPENWRT_ROOT
 
 echo "=========================================="
-echo "Rust 专项攻坚 (回归标准路径版 V26.0)"
+echo "Rust 专项攻坚 (V26.1 路径自愈版)"
 echo "=========================================="
 
-# 1. 刷新配置
+# 1. 刷新配置，让系统认领修复后的 Makefile
 make defconfig
 
-# 2. 执行预处理
-echo ">>> [1/3] 执行源码解压 (使用原始全路径)..."
-# 使用你之前无数次成功解压时使用的那个路径
-make package/feeds/packages/rust/host/prepare V=s || \
-make package/feeds/packages/lang/rust/host/prepare V=s || {
-    echo "❌ 寻址失败。正在探测物理 Makefile 位置..."
-    FIND_PATH=$(find package/feeds -name Makefile | grep "/rust/Makefile" | sed 's|/Makefile||')
-    make "${FIND_PATH}/host/prepare" V=s
-}
+# 2. 动态探测 Rust 的精确编译路径
+echo ">>> [1/3] 正在全盘扫描 Rust 逻辑路径..."
+# 这行命令会找到诸如 package/feeds/packages/lang/rust 的真实路径
+RUST_LOGIC_PATH=$(find package -name "Makefile" | grep "/rust/Makefile" | sed 's|/Makefile||' | head -n 1)
 
-# 3. 定位物理目录并执行“账本+清单”双重伪造
-echo ">>> [2/3] 正在执行指纹重构手术..."
+if [ -z "$RUST_LOGIC_PATH" ]; then
+    echo "❌ 严重错误: 无法定位 Rust 编译路径。尝试紧急软链接..."
+    ln -sf feeds/packages/lang/rust package/rust-manual
+    RUST_LOGIC_PATH="package/rust-manual"
+fi
+echo "✅ 最终编译目标: $RUST_LOGIC_PATH"
+
+# 3. 执行预处理
+echo ">>> [2/3] 执行源码解压与打补丁..."
+make "${RUST_LOGIC_PATH}/host/prepare" V=s || true
+
+# 4. 账本伪造手术 (Python)
 RUST_SRC_DIR=$(find build_dir -type d -name "rustc-*-src" | head -n 1)
-
 if [ -n "$RUST_SRC_DIR" ]; then
-    echo "✅ 锁定物理目录: $RUST_SRC_DIR"
-    # A. 使用 Python 抹平账本 (避免 Shell 转义乱码)
+    echo "✅ 锁定源码目录: $RUST_SRC_DIR"
     python3 -c "
 import os, json
 for root, dirs, files in os.walk('$RUST_SRC_DIR/vendor'):
@@ -36,31 +39,19 @@ for root, dirs, files in os.walk('$RUST_SRC_DIR/vendor'):
         with open(path, 'w') as f:
             json.dump({'files':{}, 'package':''}, f)
 "
-    # B. 抹除锁定清单中的哈希记录 (防止 pin-project-lite 报错)
     find "$RUST_SRC_DIR" -name "Cargo.lock" -exec sed -i '/checksum = /d' {} \;
-    # C. 清理干扰
     find "$RUST_SRC_DIR" -name "*.orig" -delete 2>/dev/null || true
-    echo "✅ 物理净化完成。"
+    echo "✅ 账本物理抹平完成。"
 else
-    echo "❌ 错误: 源码未解压。"
+    echo "❌ 错误: 源码未解压，请检查 dl 文件夹。"
     exit 1
 fi
 
-# 4. 稳健编译
-echo ">>> [3/3] 启动独立编译阶段..."
+# 5. 稳健编译
+echo ">>> [3/3] 启动独立编译..."
 rm -rf staging_dir/host/stamp/.rust_installed
 export CARGO_NET_OFFLINE=true
-export CARGO_PROFILE_RELEASE_DEBUG=false
-
-# 内存自适应
 MEM_TOTAL=$(free -g | awk '/^Mem:/{print $2}')
 [ "$MEM_TOTAL" -gt 12 ] && T=2 || T=1
 
-# 启动单包编译 (隐匿身份)
-# 重新获取刚才 prepare 成功的路径名
-FINAL_TARGET=$(find package/feeds -name Makefile | grep "/rust/Makefile" | sed 's|/Makefile||' | head -n 1)
-env -u CI -u GITHUB_ACTIONS make "${FINAL_TARGET}/host/compile" -j$T V=s
-
-echo "=========================================="
-echo "✅ Rust 专项任务已准备就绪！"
-echo "=========================================="
+env -u CI -u GITHUB_ACTIONS make "${RUST_LOGIC_PATH}/host/compile" -j$T V=s
