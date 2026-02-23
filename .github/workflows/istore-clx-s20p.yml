@@ -110,13 +110,16 @@ jobs:
         sudo chown $USER:$GROUPS /workdir
         echo "初始磁盘空间:"
         df -hT
-
-    # 3. 克隆源码
-    - name: Clone source code （克隆源码）
-      working-directory: /workdir
+    
+    - name: Clone source code & Setup Base
       run: |
-        df -hT $PWD
-        git clone $REPO_URL -b $REPO_BRANCH --single-branch openwrt
+        sudo mkdir -p /workdir
+        sudo chown $USER:$USER /workdir
+        cd /workdir
+        git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
+        # 将仓库所有内容（含 diy 脚本和 21.02 文件夹）拷贝到源码目录
+        cp -r $GITHUB_WORKSPACE/. /workdir/openwrt/
+        # 建立软链接供 Actions 其它步骤使用
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
     # 4. 加载自定义 Feeds (diy-part1.sh)
