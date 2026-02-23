@@ -49,15 +49,21 @@ if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; 
 fi
 
 if [ -f "$RUST_MK" ]; then
-    # 开启 CI-LLVM 并改为 if-unchanged 绕过 CI 限制
+    echo ">>> [Rust] 正在应用硬化配置 (安全追加模式)..."
+    
+    # 1. 修正 LLVM 设置
     sed -i 's/download-ci-llvm:=.*/download-ci-llvm:="if-unchanged"/g' "$RUST_MK"
     sed -i 's/download-ci-llvm=.*/download-ci-llvm="if-unchanged"/g' "$RUST_MK"
-    # 修正地址与移除锁定
-    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
+    
+    # 2. 【核心修复】：使用 printf 追加环境变量到临时文件再覆盖，避开 sed 语法坑
+    # 这能保证 Makefile 第一行绝对合法，消灭 @ 警告
+    printf "export CARGO_NET_OFFLINE=true\nexport CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_INCREMENTAL=0\n" > "$RUST_MK.tmp"
+    cat "$RUST_MK" >> "$RUST_MK.tmp"
+    mv "$RUST_MK.tmp" "$RUST_MK"
+
+    # 3. 移除锁定参数
     sed -i 's/--frozen//g' "$RUST_MK"
     sed -i 's/--locked//g' "$RUST_MK"
-    # 关键：使用 1i 在顶行注入，绝对避开 Makefile 指令块缩进问题
-    sed -i '1i export CARGO_NET_OFFLINE=true\nexport CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_INCREMENTAL=0' "$RUST_MK"
 fi
 
 # 5. 系统定制
