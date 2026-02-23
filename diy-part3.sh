@@ -1,39 +1,34 @@
 #!/bin/bash
-# diy-part3.sh
-
 set -e
 OPENWRT_ROOT=$(pwd)
 
 echo "=========================================="
-echo "开始执行 Rust 专项攻坚任务 (V21.0 稳定版)"
+echo "Rust 专项攻坚任务 (V23.0 逻辑寻址版)"
 echo "=========================================="
 
-# 1. 确保系统真正“看见”了 Rust
-echo ">>> [1/4] 刷新编译树状态..."
+# 1. 刷新配置，确保系统彻底认领 SSH2 建立的新链接
+echo ">>> [1/4] 正在同步编译索引..."
 make defconfig
 
-# 2. 物理预处理 (解压源码)
-echo ">>> [2/4] 执行 Rust 源码预处理..."
-# 尝试不同的目标路径，确保能命中（部分源码结构不同）
-make package/feeds/packages/rust/host/prepare V=s || \
-make package/feeds/lang/rust/host/prepare V=s || {
-    echo "❌ 严重错误: 即使重置索引后也无法找到 rust 编译目标。"
-    exit 1
+# 2. 执行预处理
+echo ">>> [2/4] 执行 Rust 源码预处理 (解压与打补丁)..."
+
+# 【核心修正】：使用 package/rust/host/prepare 替代长路径
+# 在 OpenWrt 中，直接用 package/包名 是最标准的做法，系统会自动处理 feeds 深度
+make package/rust/host/prepare V=s || {
+    echo "⚠️  默认寻址失败，尝试从物理位置强制定位..."
+    # 备用方案：如果逻辑名失败，脚本自动寻找 Makefile 所在的文件夹名
+    RUST_DIR_NAME=$(find package/feeds -name "Makefile" | grep "/rust/Makefile" | sed 's|package/||;s|/Makefile||' | head -n 1)
+    make "package/${RUST_DIR_NAME}/host/prepare" V=s
 }
 
-# 3. 定位目录并执行“账本伪造”
-echo ">>> [3/4] 定位目录并执行“账本伪造”..."
-# 查找 build_dir 里的源码目录
+# 3. 物理抹平账本 (保持成功的 Python 逻辑)
+echo ">>> [3/4] 正在执行账本伪造手术..."
 RUST_SRC_DIR=$(find build_dir -type d -name "rustc-*-src" | head -n 1)
 
-if [ -z "$RUST_SRC_DIR" ]; then
-    echo "❌ 错误: 源码解压目录不存在。"
-    exit 1
-fi
-echo "✅ 源码目录锁定: $RUST_SRC_DIR"
-
-# A. 使用 Python 抹平账本 (保持 V20 逻辑，这是最稳的)
-python3 -c "
+if [ -n "$RUST_SRC_DIR" ]; then
+    echo "✅ 锁定源码物理目录: $RUST_SRC_DIR"
+    python3 -c "
 import os, json
 for root, dirs, files in os.walk('$RUST_SRC_DIR/vendor'):
     if '.cargo-checksum.json' in files:
@@ -41,32 +36,21 @@ for root, dirs, files in os.walk('$RUST_SRC_DIR/vendor'):
         with open(path, 'w') as f:
             json.dump({'files':{}, 'package':''}, f)
 "
-
-# B. 抹除锁定清单中的哈希记录
-find "$RUST_SRC_DIR" -name "Cargo.lock" -exec sed -i '/checksum = /d' {} \;
-
-# C. 清理干扰文件
-find "$RUST_SRC_DIR" -name "*.orig" -delete 2>/dev/null || true
-find "$RUST_SRC_DIR" -name "*.rej" -delete 2>/dev/null || true
-find "$RUST_SRC_DIR" -name ".cargo-ok" -delete 2>/dev/null || true
+    find "$RUST_SRC_DIR" -name "Cargo.lock" -exec sed -i '/checksum = /d' {} \;
+    find "$RUST_SRC_DIR" -name "*.orig" -delete 2>/dev/null || true
+    echo "✅ 物理净化完成。"
+else
+    echo "❌ 严重错误: 无法定位解压后的源码目录。"
+    exit 1
+fi
 
 # 4. 稳健编译
-echo ">>> [4/4] 启动稳健编译..."
+echo ">>> [4/4] 启动 Rust 独立编译..."
 rm -rf staging_dir/host/stamp/.rust_installed
+export CARGO_NET_OFFLINE=true
 
-# 自动分配线程
 MEM_TOTAL=$(free -g | awk '/^Mem:/{print $2}')
 [ "$MEM_TOTAL" -gt 12 ] && RUST_THREADS=2 || RUST_THREADS=1
 
-# 离线环境与降压
-export CARGO_NET_OFFLINE=true
-export CARGO_PROFILE_RELEASE_DEBUG=false
-
-env -u CI -u GITHUB_ACTIONS make package/feeds/packages/rust/host/compile -j$RUST_THREADS V=s || {
-    echo "⚠️ 首次失败，尝试单核平推..."
-    env -u CI -u GITHUB_ACTIONS make package/feeds/packages/rust/host/compile -j1 V=s
-}
-
-echo "=========================================="
-echo "✅ Rust 专项任务圆满完成！"
-echo "=========================================="
+# 同样使用逻辑简写路径执行编译
+env -u CI -u GITHUB_ACTIONS make package/rust/host/compile -j$RUST_THREADS V=s
