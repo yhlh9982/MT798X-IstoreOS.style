@@ -118,12 +118,13 @@ jobs:
         # 在工作区建立链接，确保后续步骤兼容 cd openwrt 指令
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    - name: Load custom feeds （加载自定义 Feeds - diy-part1）
+    # 4. 加载自定义 Feeds (diy-part1.sh)
+    - name: Load custom feeds （加载自定义 Feeds）
       run: |
-        cd openwrt
-        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF feeds.conf.default
+        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
-        ./$DIY_P1_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P1_SH
 
     - name: Update feeds （更新插件源索引）
       run: cd openwrt && ./scripts/feeds update -a
@@ -131,14 +132,14 @@ jobs:
     - name: Install feeds （安装插件软链接）
       run: cd openwrt && ./scripts/feeds install -a
 
-    - name: Load custom configuration （加载自定义配置 - diy-part2）
+    # 6. 加载自定义配置 (diy-part2.sh)
+    - name: Load custom configuration （加载自定义配置diy-part2）
       run: |
-        cd openwrt
-        # 搬运 files 文件夹及配置文件
-        [ -e files ] && mv files files_tmp && mv files_tmp files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE .config
+        [ -e files ] && mv files openwrt/files
+        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
-        ./$DIY_P2_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P2_SH
 
     - name: SSH connection to Actions （SSH 远程调试）
       uses: mxschmitt/action-tmate@v3
@@ -152,11 +153,14 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    - name: Rust Special Attack （执行 Rust 救治与单独编译 - diy-part3）
+    # 6. 加载自定义配置 (diy-part3.sh)
+    - name: Load custom configuration （加载自定义配置diy-part3）
       run: |
-        cd openwrt
+        [ -e files ] && mv files openwrt/files
+        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P3_SH
-        ./$DIY_P3_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P3_SH
 
     - name: Compile the firmware （固件正式编译）
       id: compile
