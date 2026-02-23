@@ -22,6 +22,8 @@ env:
   DIY_P1_SH: diy-part1.sh
   # 自定义脚本 2 (在更新 feeds 之后运行)
   DIY_P2_SH: diy-part2.sh
+  # 自定义脚本 3 (在更新 feeds 之后运行)
+  DIY_P3_SH: diy-part3.sh
   # 上传 bin 目录 (包含所有 ipk)
   UPLOAD_BIN_DIR: true
   # 上传固件目录 (包含 img/bin)
@@ -154,66 +156,19 @@ jobs:
         make download -j8
         find dl -size -1024c -exec rm -f {} \;
 
-    # 8.5 物理环境净化 (针对 Rust 1.90 的终极自愈逻辑)
-    - name: Pre-process Rust & Neutralize Checksums
+    # 8.5. 执行 Rust 救治与单独编译 (SSH3)
+    - name: Rust Special Attack (Host)
       run: |
+        chmod +x $DIY_P3_SH
         cd openwrt
-        echo ">>> [1/3] 强制执行 Rust 预处理 (解压与打补丁)..."
-        make package/feeds/packages/rust/host/prepare V=s || true
-        
-        echo ">>> [2/3] 动态定位并执行“账本+清单”双重净化..."
-        RUST_SRC_DIR=$(find build_dir -type d -name "rustc-*-src" | head -n 1)
-        
-        if [ -n "$RUST_SRC_DIR" ]; then
-            echo "✅ 准确定位源码目录: $RUST_SRC_DIR"
-            
-            # A. 抹平小账本：删除所有 vendor 目录下的校验记录
-            # 1.90 经验证明，直接删除比抹平内容更有效
-            find "$RUST_SRC_DIR/vendor" -name ".cargo-checksum.json" -delete
-            
-            # B. 【关键】抹平大清单：删除 Cargo.lock 中所有的 checksum 记录
-            # 这一步让 Cargo 彻底“失明”，不再寻找任何哈希值进行比对
-            find "$RUST_SRC_DIR" -name "Cargo.lock" -exec sed -i '/checksum = /d' {} \;
-            
-            echo ">>> [3/3] 物理擦除残留干扰文件..."
-            find "$RUST_SRC_DIR" -name "*.orig" -delete 2>/dev/null || true
-            find "$RUST_SRC_DIR" -name "*.rej" -delete 2>/dev/null || true
-            find "$RUST_SRC_DIR" -name ".cargo-ok" -delete 2>/dev/null || true
-            
-            echo "✅ 物理环境净化完成：账本已撕，清单已烧。"
-        else
-            echo "❌ 严重错误: 无法定位 Rust 源码目录。"
-            exit 1
-        fi
+        $GITHUB_WORKSPACE/$DIY_P3_SH
 
     # 9. 编译固件 (阶梯式自适应编译)
     - name: Compile the firmware
       id: compile
       run: |
         cd openwrt
-        # 清除旧戳记，确保系统必须经过我们刚刚抹平后的环境
-        rm -rf staging_dir/host/stamp/.rust_installed
-        
-        echo ">>> 检测系统资源..."
-        MEM_TOTAL=$(free -g | awk '/^Mem:/{print $2}')
-        echo "检测到物理内存: ${MEM_TOTAL} GB"
-        
-        # 针对 1.90 的保守策略：内存 > 12G 开启 2 线程，否则单线程
-        if [ "$MEM_TOTAL" -gt 12 ]; then
-            RUST_THREADS=2
-        else
-            RUST_THREADS=1
-        fi
-        
-        echo ">>> [第一阶段] 正在编译 Rust [host] (使用 -j$RUST_THREADS)..."
-        # 注入离线变量作为二重保险
-        export CARGO_NET_OFFLINE=true
-        make package/feeds/packages/rust/host/compile -j$RUST_THREADS V=s || {
-            echo "❌ Rust 编译失败。输出最后 100 行日志..."
-            exit 1
-        }
-        
-        echo ">>> [第二阶段] Rust 已顺利通过，开始并行编译剩余固件..."
+
         make -j$(nproc) || make -j1 V=s
         
         echo "status=success" >> $GITHUB_OUTPUT
