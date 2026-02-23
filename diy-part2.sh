@@ -200,7 +200,7 @@ echo ">>> [4/5] 强制刷新编译系统索引..."
 # 删除 tmp 目录是让系统识别“掉包”后 Rust 定义的唯一办法
 rm -rf "$OPENWRT_ROOT/tmp"
 ./scripts/feeds update -i
-./scripts/feeds install -f -p packages rust
+./scripts/feeds install -f -p
 
 # ==========================================
 # 第五步：二次核查并结束
