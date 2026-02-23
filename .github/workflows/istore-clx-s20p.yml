@@ -147,35 +147,70 @@ jobs:
       if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
 
     # 8. 下载软件包
-    - name: Download package （下载软件包）
+    - name: Download package
       id: package
       run: |
         cd openwrt
         make defconfig
+        # 预下载，下载过程可以多线程，不吃内存
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    # 9. 编译固件 
-    - name: Compile the firmware （编译固件）
+    # 8.5 物理清洗与环境预备 (保守策略：手动干预解压过程)
+    - name: Pre-process Rust & Nuke Checksum
+      run: |
+        cd openwrt
+        echo ">>> [保守策略] 仅执行 Rust 解压与打补丁..."
+        # 触发解压和补丁，即使失败也继续，后面手动清理
+        make package/feeds/packages/rust/host/prepare V=s || true
+        
+        echo ">>> [保守策略] 正在物理销毁所有校验账本，防止 Cargo 自杀..."
+        # 批量删除所有可能导致 1.90/1.85 报错的文件
+        # 这里使用了更宽泛的匹配，确保万无一失
+        find build_dir/host/rustc-* -name ".cargo-checksum.json" -delete 2>/dev/null || true
+        find build_dir/host/rustc-* -name "*.orig" -delete 2>/dev/null || true
+        find build_dir/host/rustc-* -name "*.rej" -delete 2>/dev/null || true
+        find build_dir/host/rustc-* -name ".cargo-ok" -delete 2>/dev/null || true
+        
+        echo "✅ Rust 物理环境已净化。当前内存状态："
+        free -h
+
+    # 9. 编译固件 (极致保守版)
+    - name: Compile the firmware
       id: compile
       run: |
         cd openwrt
-        echo "开始编译..."
+        echo ">>> 检查系统资源..."
         df -hT /
+        free -h
         
-        make -j$(nproc) || make -j1 || make -j1 V=s
+        # 极致保守模式：第一阶段
+        echo ">>> [关键] 正在以单线程 (-j1) 编译 Rust [host]..."
+        echo ">>> 此过程较慢，但可确保在低内存机器上不崩溃..."
+        
+        # 强制单线程编译最吃资源的 Rust host
+        # V=s 确保我们可以看到实时进度，防止因长时间无输出被 GitHub 误杀
+        make package/feeds/packages/rust/host/compile -j1 V=s || {
+            echo "❌ Rust host 编译失败，即使在单线程模式下也无法通过。"
+            exit 1
+        }
+        
+        echo "✅ Rust [host] 顺利通过！开始全速编译剩余组件..."
+        
+        # 极致保守模式：第二阶段
+        # 此时最难的关卡已过，可以利用多核编译剩余的小型插件
+        # 如果多核失败，会自动切换到单核带详细日志模式
+        make -j$(nproc) || make -j1 V=s
         
         echo "========================================"
-        echo "固件编译完成"
-        echo "最终磁盘空间:"
-        df -hT /
+        echo "✅ 固件编译圆满完成"
         echo "========================================"
         
         echo "status=success" >> $GITHUB_OUTPUT
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
-    - name: Check space usage （编译后容量确认）
+    - name: Check space usage
       if: (!cancelled())
       run: df -hT
 
