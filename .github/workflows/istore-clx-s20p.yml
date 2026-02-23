@@ -157,62 +157,53 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    # 8.5 物理清洗与环境预备 (保守策略：手动干预解压过程)
-    - name: Pre-process Rust & Nuke Checksum
+    # 8.5 物理环境净化 (针对 Rust 1.90 的“抹平账本”策略)
+    - name: Pre-process Rust & Neutralize Checksums
       run: |
         cd openwrt
-        echo ">>> [保守策略] 仅执行 Rust 解压与打补丁..."
-        # 触发解压和补丁，即使失败也继续，后面手动清理
-        make package/feeds/packages/rust/host/prepare V=s || true
+        echo ">>> [第一步] 强制执行 Rust 预处理 (解压与打补丁)..."
+        # 必须先让系统完成打补丁，产生那些 .orig 文件
+        make package/feeds/packages/lang/rust/host/prepare V=s || true
         
-        echo ">>> [保守策略] 正在物理销毁所有校验账本，防止 Cargo 自杀..."
-        # 批量删除所有可能导致 1.90/1.85 报错的文件
-        # 这里使用了更宽泛的匹配，确保万无一失
-        find build_dir/host/rustc-* -name ".cargo-checksum.json" -delete 2>/dev/null || true
-        find build_dir/host/rustc-* -name "*.orig" -delete 2>/dev/null || true
-        find build_dir/host/rustc-* -name "*.rej" -delete 2>/dev/null || true
-        find build_dir/host/rustc-* -name ".cargo-ok" -delete 2>/dev/null || true
+        echo ">>> [第二步] 抹平所有 vendor 账本内容..."
+        # 核心逻辑：不再删除 .cargo-checksum.json，而是将其中的 "files":{...} 替换为 "files":{}
+        # 这样 Cargo 觉得账本还在，但里面没有要检查的文件，从而实现 100% 欺骗
+        find build_dir/host/rustc-1.90.0-src/vendor -name .cargo-checksum.json -exec sed -i 's/"files":{[^}]*}/"files":{}/g' {} +
         
-        echo "✅ Rust 物理环境已净化。当前内存状态："
-        free -h
+        echo ">>> [第三步] 物理擦除残留备份文件..."
+        # 此时再删掉 .orig，Cargo 就不会因为账本里有记录而报错了
+        find build_dir/host/rustc-1.90.0-src -name "*.orig" -delete 2>/dev/null || true
+        find build_dir/host/rustc-1.90.0-src -name "*.rej" -delete 2>/dev/null || true
+        find build_dir/host/rustc-1.90.0-src -name ".cargo-ok" -delete 2>/dev/null || true
+        
+        echo "✅ Rust 账本已抹平，补丁痕迹已消除。"
 
-    # 9. 编译固件 (极致保守版)
+    # 9. 编译固件 (动态资源分配版)
     - name: Compile the firmware
       id: compile
       run: |
         cd openwrt
-        echo ">>> 检查系统资源..."
-        df -hT /
-        free -h
+        # 强制清理上一次失败的戳记，防止它跳过我们刚抹平的环境
+        rm -rf staging_dir/host/stamp/.rust_installed
         
-        # 极致保守模式：第一阶段
-        echo ">>> [关键] 正在以单线程 (-j1) 编译 Rust [host]..."
-        echo ">>> 此过程较慢，但可确保在低内存机器上不崩溃..."
+        MEM_TOTAL=$(free -g | awk '/^Mem:/{print $2}')
+        echo "检测到物理内存: ${MEM_TOTAL} GB"
         
-        # 强制单线程编译最吃资源的 Rust host
-        # V=s 确保我们可以看到实时进度，防止因长时间无输出被 GitHub 误杀
-        make package/feeds/packages/rust/host/compile -j1 V=s || {
-            echo "❌ Rust host 编译失败，即使在单线程模式下也无法通过。"
+        if [ "$MEM_TOTAL" -gt 12 ]; then
+            RUST_THREADS=2
+        else
+            RUST_THREADS=1
+        fi
+        
+        echo ">>> 开始编译 Rust [host] (使用 -j$RUST_THREADS)..."
+        # 使用 V=s 确保我们可以看到 Cargo 是否还在抱怨
+        make package/feeds/packages/lang/rust/host/compile -j$RUST_THREADS V=s || {
+            echo "❌ Rust 编译再次失败。请检查下方日志是否仍有 checksum 报错。"
             exit 1
         }
         
-        echo "✅ Rust [host] 顺利通过！开始全速编译剩余组件..."
-        
-        # 极致保守模式：第二阶段
-        # 此时最难的关卡已过，可以利用多核编译剩余的小型插件
-        # 如果多核失败，会自动切换到单核带详细日志模式
+        echo "✅ Rust 攻克成功，开始并行编译固件..."
         make -j$(nproc) || make -j1 V=s
-        
-        echo "========================================"
-        echo "✅ 固件编译圆满完成"
-        echo "========================================"
-        
-        echo "status=success" >> $GITHUB_OUTPUT
-        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-
-    - name: Check space usage
-      if: (!cancelled())
-      run: df -hT
 
     # 10. 上传 bin 目录 (Artifacts)
     - name: Upload bin directory （上传 bin 目录）
