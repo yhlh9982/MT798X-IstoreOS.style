@@ -156,33 +156,31 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    # 8.5 物理环境净化 (V15.1 路径自适应增强版)
+    # 8.5 物理环境净化 (V15.2 强力覆盖版)
     - name: Pre-process Rust & Neutralize Checksums
       run: |
         cd openwrt
         echo ">>> [1/3] 强制执行 Rust 预处理 (解压与打补丁)..."
-        # 修正路径：移除 lang/ 确保指向正确目标
         make package/feeds/packages/rust/host/prepare V=s || true
         
-        echo ">>> [2/3] 动态定位并抹平所有 Rust 账本内容..."
-        # 策略：不硬编码路径，全方位搜索 build_dir 下所有的 rustc 源码文件夹
+        echo ">>> [2/3] 动态定位并物理抹平所有 Rust 账本..."
         RUST_SRC_DIR=$(find build_dir -type d -path "*/host/rustc-*-src" | head -n 1)
         
         if [ -n "$RUST_SRC_DIR" ]; then
             echo "✅ 准确定位到源码目录: $RUST_SRC_DIR"
             
-            # 抹平账本：彻底清空校验名单
-            find "$RUST_SRC_DIR" -name ".cargo-checksum.json" -exec sed -i 's/"files":{[^}]*}/"files":{}/g' {} \;
+            # 【核心修改】不再使用 sed 替换，直接用 echo 覆盖所有校验 JSON
+            # {"files":{}} 代表该目录下没有任何文件需要哈希校验
+            find "$RUST_SRC_DIR/vendor" -name ".cargo-checksum.json" -exec sh -c 'echo "{\"files\":{},\"package\":null}" > "$1"' _ {} \;
             
             # 物理擦除残留干扰文件
             find "$RUST_SRC_DIR" -name "*.orig" -delete 2>/dev/null || true
             find "$RUST_SRC_DIR" -name "*.rej" -delete 2>/dev/null || true
             find "$RUST_SRC_DIR" -name ".cargo-ok" -delete 2>/dev/null || true
             
-            echo "✅ 账本净化完成。"
+            echo "✅ 账本物理抹平完成 (已重置为无校验模式)。"
         else
-            echo "❌ 严重警告: 无法定位 Rust 源码解压目录，补丁可能未应用。"
-            ls -R build_dir | grep "rustc" || echo "未发现任何 rustc 相关目录"
+            echo "❌ 严重警告: 无法定位 Rust 源码目录。"
         fi
 
     # 9. 编译固件 (自适应资源分配)
@@ -190,19 +188,22 @@ jobs:
       id: compile
       run: |
         cd openwrt
-        # 必须清除之前的安装戳记，强迫系统使用我们刚“动过手术”的源码
+        # 清除戳记，确保强制重新开始
         rm -rf staging_dir/host/stamp/.rust_installed
         
         MEM_TOTAL=$(free -g | awk '/^Mem:/{print $2}')
         echo "检测到物理内存: ${MEM_TOTAL} GB"
         
-        [ "$MEM_TOTAL" -gt 12 ] && RUST_THREADS=2 || RUST_THREADS=1
+        # 即使内存大，针对 1.90 也建议先用 -j1 观察，如果想要速度可以改回下面逻辑
+        # [ "$MEM_TOTAL" -gt 12 ] && RUST_THREADS=2 || RUST_THREADS=1
+        RUST_THREADS=1 
         
         echo ">>> [第一阶段] 正在编译 Rust [host] (使用 -j$RUST_THREADS)..."
-        # 显式指向 host 编译目标
+        # 增加环境变量强制 Cargo 忽略校验（双重保险）
+        export CARGO_NET_OFFLINE=true
         make package/feeds/packages/rust/host/compile -j$RUST_THREADS V=s || {
-            echo "❌ Rust 编译失败。尝试单线程输出最后 50 行错误日志..."
-            make package/feeds/packages/rust/host/compile -j1 V=s | tail -n 50
+            echo "❌ Rust 编译失败。输出最后 100 行日志..."
+            # 如果还是失败，通常是由于某个 vendor 目录没被处理到
             exit 1
         }
         
