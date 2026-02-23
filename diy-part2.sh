@@ -63,24 +63,18 @@ if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; 
 fi
 
 if [ -f "$RUST_MK" ]; then
-    echo ">>> [Rust] 正在执行硬化配置与哈希校准..."
-    # 修正：将 LLVM 设为 if-unchanged
+    echo ">>> [Rust] 正在应用安全硬化配置..."
+    
+    # 1. 修正 LLVM 设置 (避开 CI 限制)
     sed -i 's/download-ci-llvm:=.*/download-ci-llvm:="if-unchanged"/g' "$RUST_MK"
     sed -i 's/download-ci-llvm=.*/download-ci-llvm="if-unchanged"/g' "$RUST_MK"
     
-    # 修正：物理哈希对齐 (防止官方镜像微调导致失败)
-    V=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-    mkdir -p dl
-    wget -q --timeout=30 -O "dl/rustc-${V}-src.tar.xz" "https://static.rust-lang.org/dist/rustc-${V}-src.tar.xz"
-    if [ -s "dl/rustc-${V}-src.tar.xz" ]; then
-        ACTUAL_H=$(sha256sum "dl/rustc-${V}-src.tar.xz" | cut -d' ' -f1)
-        sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
-    fi
-
-    # 关键修复：使用 1i 在 Makefile 最顶行注入环境变量，避开语法冲突和 Tab 问题
+    # 2. 安全注入环境变量：使用 1i 在 Makefile 第一行插入，绝对不会破坏缩进
     sed -i '1i export CARGO_NET_OFFLINE=true' "$RUST_MK"
     sed -i '1i export CARGO_PROFILE_RELEASE_DEBUG=false' "$RUST_MK"
-    
+    sed -i '1i export CARGO_INCREMENTAL=0' "$RUST_MK"
+
+    # 3. 移除锁定参数
     sed -i 's/--frozen//g' "$RUST_MK"
     sed -i 's/--locked//g' "$RUST_MK"
 fi
