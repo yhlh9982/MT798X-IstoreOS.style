@@ -73,17 +73,17 @@ grep -rl '"parent": "luci.services"' package/tailscale 2>/dev/null | xargs sed -
 grep -rl "admin/services/ksmbd" feeds package 2>/dev/null | xargs sed -i 's|admin/services/ksmbd|admin/nas/ksmbd|g' 2>/dev/null || true
 grep -rl '"parent": "luci.services"' feeds package 2>/dev/null | xargs sed -i 's/"parent": "luci.services"/"parent": "luci.nas"/g' 2>/dev/null || true
 
-# ---------------------------------------------------------
-# 6. Rust 专项：回滚底座与硬化配置
-# ---------------------------------------------------------
-echo ">>> [5/7] 正在强制同步 Rust 稳定分支底座..."
+# =========================================================
+# Rust 专项：回滚底座与哈希校准 (SSH2 部分)
+# =========================================================
+echo ">>> [Rust] 正在同步底座并执行基础配置..."
 
-PKGS_BRANCH="master" # 锁定 master 或 openwrt-23.05
+PKGS_BRANCH="master" # 可根据需要改为 openwrt-23.05
 PKGS_REPO="https://github.com/openwrt/packages.git"
 RUST_DIR="feeds/packages/lang/rust"
 RUST_MK="$RUST_DIR/Makefile"
 
-# 物理同步 (确保 Makefile 和补丁配套)
+# 1. 物理同步 (确保 Makefile 和补丁配套)
 rm -rf "$RUST_DIR"
 rm -rf build_dir/host/rustc-*
 rm -rf staging_dir/host/stamp/.rust_installed
@@ -93,46 +93,34 @@ if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; 
     mkdir -p "$RUST_DIR"
     cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
     rm -rf "$TEMP_REPO"
-    echo "✅ Rust $PKGS_BRANCH 补丁与 Makefile 对齐成功"
+    echo "✅ Rust 底座同步成功。"
 fi
 
-# 注入核心硬化指令
+# 2. 极简硬化 Makefile (仅修改值，不注入新行)
 if [ -f "$RUST_MK" ]; then
-    # 替换为 if-unchanged 绕过 CI 限制
+    # 修正 LLVM 为 if-unchanged (绕过 Rust 1.90 的 CI 限制)
     sed -i 's/download-ci-llvm:=.*/download-ci-llvm:="if-unchanged"/g' "$RUST_MK"
     sed -i 's/download-ci-llvm=.*/download-ci-llvm="if-unchanged"/g' "$RUST_MK"
-    # 修正镜像地址
-    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
-    # 移除锁定标志
+    
+    # 物理哈希校准 (自适应官方镜像)
+    V=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+    mkdir -p dl
+    wget -q --timeout=30 -O "dl/rustc-${V}-src.tar.xz" "https://static.rust-lang.org/dist/rustc-${V}-src.tar.xz" || true
+    if [ -s "dl/rustc-${V}-src.tar.xz" ]; then
+        ACTUAL_H=$(sha256sum "dl/rustc-${V}-src.tar.xz" | cut -d' ' -f1)
+        sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
+        echo "✅ 哈希校准完成: $ACTUAL_H"
+    fi
+
+    # 移除锁定参数
     sed -i 's/--frozen//g' "$RUST_MK"
     sed -i 's/--locked//g' "$RUST_MK"
-    # 注入降压变量
-    sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_NET_OFFLINE=true' "$RUST_MK"
 fi
 
-# ---------------------------------------------------------
-# 7. 索引强接与收尾 (解决寻址失败的核心)
-# ---------------------------------------------------------
-echo ">>> [6/7] 正在全量强制刷新系统索引与链接..."
-
-# 7.1 物理删除 package 目录下可能存在的旧残余链接
-# 这一步是为了防止 SSH3 报 No rule to make target
-find package/feeds -name "rust" -type l -exec rm -f {} \;
-
-# 7.2 清理元数据缓存
+# 3. 强制刷新索引 (关键：确保 SSH3 寻址正常)
+echo "🔄 正在刷新全系统索引..."
 rm -rf tmp
-
-# 7.3 强制重新索引并安装
+# 物理清理可能存在的坏链接
+find package/feeds -name "rust" -type l -exec rm -f {} \;
 ./scripts/feeds update -i
 ./scripts/feeds install -a -f
-
-# 7.4 关键：执行一次 defconfig，确保主系统认领新路径
-make defconfig
-
-# 7.5 修改默认 IP
-sed -i 's/192.168.1.1/192.168.30.1/g' package/base-files/files/bin/config_generate
-sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
-
-echo "=========================================="
-echo "✅ SSH2 整合优化脚本执行完毕"
-echo "=========================================="
