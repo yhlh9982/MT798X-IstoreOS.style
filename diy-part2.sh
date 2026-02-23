@@ -146,7 +146,7 @@ echo "=========================================="
 
 # 1. 配置区域
 PKGS_REPO="https://github.com/openwrt/packages.git"
-PKGS_BRANCH="master"  # 我们想要的稳定分支 openwrt-23.05  openwrt-24.10  openwrt-25.12  master  可选
+PKGS_BRANCH="openwrt-23.05"  # 我们想要的稳定分支 openwrt-23.05  openwrt-24.10  openwrt-25.12  master  可选
 RUST_OFFICIAL_URL="https://static.rust-lang.org/dist"
 
 OPENWRT_ROOT=$(pwd)
