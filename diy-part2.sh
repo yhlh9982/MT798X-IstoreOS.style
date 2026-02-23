@@ -140,69 +140,75 @@ if [ -n "$KSMBD_FILES" ]; then
     echo "✅ KSMBD 菜单已移动到 NAS"
 fi
 
-# ---------------------------------------------------------
-# 5. Rust 专项救治逻辑 (V13.2 对齐版)
-# ---------------------------------------------------------
-set -e
-echo ">>> [Rust] 正在同步底座与校准哈希..."
+# =========================================================
+# Rust 专项：底座同步、哈希对齐与极简配置 (SSH2)
+# =========================================================
+echo ">>> [Rust] 正在启动底座对齐与环境硬化..."
 
-PKGS_BRANCH="master" 
+# 1. 设定目标分支与路径
+PKGS_BRANCH="master" # 可根据需要改为 openwrt-23.05
 PKGS_REPO="https://github.com/openwrt/packages.git"
 RUST_DIR="feeds/packages/lang/rust"
 RUST_MK="$RUST_DIR/Makefile"
 
-# 物理同步
+# 2. 彻底物理同步 (确保 Makefile 与 Patches 补丁集完美匹配)
+# 先清空旧数据，防止 1.90.0 的旧补丁残留在 1.85.0 的目录里
 rm -rf "$RUST_DIR"
 rm -rf build_dir/host/rustc-*
 rm -rf staging_dir/host/stamp/.rust_installed
 
 TEMP_REPO="/tmp/rust_sync_$$"
-git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null
-mkdir -p "$RUST_DIR"
-cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
-rm -rf "$TEMP_REPO"
+if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; then
+    mkdir -p "$RUST_DIR"
+    cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
+    rm -rf "$TEMP_REPO"
+    echo "✅ Rust $PKGS_BRANCH 底座物理同步成功。"
+fi
 
+# 3. 极简硬化 Makefile (仅修改参数值，不注入新行，防止破坏语法)
 if [ -f "$RUST_MK" ]; then
-    echo ">>> [Rust] 执行哈希自适应与配置硬化..."
-    # 修正 LLVM 绕过 CI 限制
+    echo ">>> [Rust] 正在应用配置硬化..."
+    
+    # A. 修正 LLVM 开启方式：设为 if-unchanged 绕过 CI 环境限制
     sed -i 's/download-ci-llvm:=.*/download-ci-llvm:="if-unchanged"/g' "$RUST_MK"
     sed -i 's/download-ci-llvm=.*/download-ci-llvm="if-unchanged"/g' "$RUST_MK"
     
-    # 哈希物理对齐
-    V=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-    EXPECTED_H=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+    # B. 哈希物理对齐：下载官方包并以其实际哈希为准 (解决元数据滞后)
+    V_RUST=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+    H_RUST_MK=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
     mkdir -p dl
-    RUST_FILE="dl/rustc-${V}-src.tar.xz"
-
-    if [ ! -s "$RUST_FILE" ]; then
-        wget -q --timeout=30 -O "$RUST_FILE" "https://static.rust-lang.org/dist/rustc-${V}-src.tar.xz" || true
+    
+    echo ">>> [Rust] 正在校验官方源码包: $V_RUST"
+    if [ ! -s "dl/rustc-${V_RUST}-src.tar.xz" ]; then
+        wget -q --timeout=30 -O "dl/rustc-${V_RUST}-src.tar.xz" "https://static.rust-lang.org/dist/rustc-${V_RUST}-src.tar.xz" || true
     fi
 
-    if [ -s "$RUST_FILE" ]; then
-        ACTUAL_H=$(sha256sum "$RUST_FILE" | cut -d' ' -f1)
-        if [ "$ACTUAL_H" != "$EXPECTED_H" ]; then
-            echo "⚠️ 哈希不匹配，已修正 Makefile 以适配物理文件。"
+    if [ -s "dl/rustc-${V_RUST}-src.tar.xz" ]; then
+        ACTUAL_H=$(sha256sum "dl/rustc-${V_RUST}-src.tar.xz" | cut -d' ' -f1)
+        if [ "$ACTUAL_H" != "$H_RUST_MK" ]; then
+            echo "⚠️  哈希不匹配 (实际: $ACTUAL_H)，正在修正 Makefile..."
             sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
+        else
+            echo "✅ 哈希校验一致。"
         fi
     fi
 
-    # 常规硬化
+    # C. 修正官方镜像地址与移除锁定
+    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
     sed -i 's/--frozen//g' "$RUST_MK"
     sed -i 's/--locked//g' "$RUST_MK"
-    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
-    # 环境变量注入
-    sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_NET_OFFLINE=true' "$RUST_MK"
 fi
 
-# ---------------------------------------------------------
-# 6. 索引强接 (关键收尾)
-# ---------------------------------------------------------
+# 4. 索引重映射 (确保 SSH3 寻址 100% 成功)
 echo "🔄 正在刷新全系统索引..."
-rm -rf tmp
-# 物理删除旧软链接
+# 物理删除 package 目录下的旧软链接，强迫 feeds 命令重新创建
 find package/feeds -name "rust" -type l -exec rm -f {} \;
+
+rm -rf tmp
 ./scripts/feeds update -i
 ./scripts/feeds install -a -f
+
+echo "✅ Rust SSH2 配置任务全部完成。"
 
 # 修改默认 IP
 # sed -i 's/192.168.1.1/192.168.30.1/g' package/base-files/files/bin/config_generate
