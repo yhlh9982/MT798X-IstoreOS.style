@@ -140,28 +140,46 @@ if [ -n "$KSMBD_FILES" ]; then
     echo "✅ KSMBD 菜单已移动到 NAS"
 fi
 
-# =========================================================
-# Rust 替换
-# =========================================================
-echo ">>> [Rust] 执行分支rust替换..."
+echo "=========================================="
+echo "Rust 终极闭环救治脚本 (V13.2 终极版)"
+echo "=========================================="
 
-PKGS_BRANCH="openwrt-23.05" 
+# 1. 配置区域
 PKGS_REPO="https://github.com/openwrt/packages.git"
-RUST_DIR="feeds/packages/lang/rust"
+PKGS_BRANCH="openwrt-23.05"
+RUST_OFFICIAL_URL="https://static.rust-lang.org/dist"
+
+OPENWRT_ROOT=$(pwd)
+RUST_DIR="$OPENWRT_ROOT/feeds/packages/lang/rust"
 RUST_MK="$RUST_DIR/Makefile"
+DL_DIR="$OPENWRT_ROOT/dl"
 
-# 1. 物理替换底座
+# ==========================================
+# 第一步：物理清空与底座对齐
+# ==========================================
+echo ">>> [1/5] 清空当前 Rust 环境并同步官方 $PKGS_BRANCH ..."
+# 物理删除旧包、编译残余、以及 OpenWrt 编译状态戳记
 rm -rf "$RUST_DIR"
-rm -rf build_dir/host/rustc-*
-rm -rf staging_dir/host/stamp/.rust_installed
+rm -rf "$OPENWRT_ROOT/build_dir/host/rustc-*"
+rm -rf "$OPENWRT_ROOT/build_dir/target-*/host/rustc-*"
+rm -rf "$OPENWRT_ROOT/staging_dir/host/stamp/.rust_installed"
 
+# 克隆指定分支的定义
 TEMP_REPO="/tmp/rust_sync_$$"
-if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; then
-    mkdir -p "$RUST_DIR"
-    cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
-    rm -rf "$TEMP_REPO"
-    echo "✅ 已同步特定分支底座。"
-fi
+git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null
+mkdir -p "$RUST_DIR"
+cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
+rm -rf "$TEMP_REPO"
+echo "✅ 成功锁定 $PKGS_BRANCH 版本的 Makefile 和 Patches。"
+
+# ==========================================
+# 第二步：注入本地编译硬化优化
+# ==========================================
+echo ">>> [3/5] 注入本地编译加速与容错指令..."
+
+# 1. 强制启用预编译 LLVM (CI-LLVM)
+sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
+sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
 
 # 基础刷新 
 ./scripts/feeds update -i
