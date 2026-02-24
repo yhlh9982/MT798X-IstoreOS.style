@@ -143,7 +143,7 @@ fi
 # =========================================================
 # Rust 替换
 # =========================================================
-echo ">>> [Rust] 执行底座同步与指纹核实..."
+echo ">>> [Rust] 执行分支rust替换..."
 
 PKGS_BRANCH="master" 
 PKGS_REPO="https://github.com/openwrt/packages.git"
@@ -160,7 +160,7 @@ if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; 
     mkdir -p "$RUST_DIR"
     cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
     rm -rf "$TEMP_REPO"
-    echo "✅ 已同步官方 Master 底座。"
+    echo "✅ 已同步特定分支底座。"
 fi
 
 # 基础刷新 
