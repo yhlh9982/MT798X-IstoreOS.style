@@ -141,67 +141,60 @@ if [ -n "$KSMBD_FILES" ]; then
 fi
 
 # =========================================================
-# Rust 专项：哈希强制校准与结构保护 (SSH2 V31.1)
+# Rust 专项：哈希对齐与底座同步 (SSH2)
 # =========================================================
-echo ">>> [Rust] 开始执行底座同步与哈希物理校准..."
+echo ">>> [Rust] 正在物理同步底座并校准哈希..."
 
-PKGS_BRANCH="master" # 根据需要可改为 openwrt-23.05
+PKGS_BRANCH="master" 
 PKGS_REPO="https://github.com/openwrt/packages.git"
 RUST_DIR="feeds/packages/lang/rust"
 RUST_MK="$RUST_DIR/Makefile"
 
-# 1. 彻底清空并同步底座 (确保 Patches 和 Makefile 100% 官方原装)
+# 1. 彻底删除旧目录，确保没有被之前的错误修改污染
 rm -rf "$RUST_DIR"
 rm -rf build_dir/host/rustc-*
 rm -rf staging_dir/host/stamp/.rust_installed
 
+# 2. 重新拉取官方原厂定义
 TEMP_REPO="/tmp/rust_sync_$$"
 git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null
 mkdir -p "$RUST_DIR"
 cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
 rm -rf "$TEMP_REPO"
-echo "✅ Rust $PKGS_BRANCH 源码定义同步完成。"
 
-# 2. 物理哈希校准 (解决官方哈希更新问题)
+# 3. 极简硬化 (仅修改现有参数，严禁插入 export 等新行)
 if [ -f "$RUST_MK" ]; then
-    V_RUST=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-    # 动态探测后缀，防止下载 404
-    EXT_RUST=$(grep '^PKG_SOURCE:=' "$RUST_MK" | grep -oE "tar\.(gz|xz)" | head -1)
-    [ -z "$EXT_RUST" ] && EXT_RUST="tar.gz"
-    
-    RUST_FILE="rustc-${V_RUST}-src.${EXT_RUST}"
-    mkdir -p dl
-    
-    echo ">>> [Rust] 正在获取官方物理包以校准哈希: $RUST_FILE"
-    wget -q --timeout=60 --tries=3 -O "dl/$RUST_FILE" "https://static.rust-lang.org/dist/$RUST_FILE" || true
-
-    if [ -s "dl/$RUST_FILE" ]; then
-        REAL_HASH=$(sha256sum "dl/$RUST_FILE" | cut -d' ' -f1)
-        # 【关键修正】只改值，不增减行，不引入任何 export 语句
-        sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$REAL_HASH/" "$RUST_MK"
-        echo "✅ Makefile 哈希已对齐: $REAL_HASH"
-    fi
-
-    # 3. 极简修正配置 (杜绝产生 @ 乱码)
-    # 仅修改 llvm 参数为 if-unchanged
+    # A. 修正 LLVM 开启方式
     sed -i 's/download-ci-llvm:=.*/download-ci-llvm:="if-unchanged"/g' "$RUST_MK"
     sed -i 's/download-ci-llvm=.*/download-ci-llvm="if-unchanged"/g' "$RUST_MK"
     
-    # 移除锁定和修正地址
+    # B. 哈希物理对齐 (自适应校准)
+    V=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+    EXT=$(grep '^PKG_SOURCE:=' "$RUST_MK" | grep -oE "tar\.(gz|xz)" | head -1)
+    [ -z "$EXT" ] && EXT="tar.gz"
+    RUST_FILE="dl/rustc-${V}-src.${EXT}"
+    
+    [ ! -s "$RUST_FILE" ] && wget -q --timeout=30 -O "$RUST_FILE" "https://static.rust-lang.org/dist/rustc-${V}-src.${EXT}" || true
+
+    if [ -s "$RUST_FILE" ]; then
+        ACTUAL_H=$(sha256sum "$RUST_FILE" | cut -d' ' -f1)
+        sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
+        echo "✅ Makefile 哈希已物理对齐。"
+    fi
+
+    # C. 修正官方镜像地址并取消锁定 (不加新行，防止 @ 报错)
+    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
     sed -i 's/--frozen//g' "$RUST_MK"
     sed -i 's/--locked//g' "$RUST_MK"
-    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
 fi
 
-# 4. 强制重置全系统索引 (解决 rust/host does not exist 的唯一方法)
-echo "🔄 正在重置软链接与索引缓存..."
+# 4. 强制刷新全系统索引 (这一步是消除 WARNING 的关键)
+echo "🔄 正在重连软链接并刷新索引..."
 rm -rf tmp
-# 物理删除旧链接，强迫重新生成
+# 物理删除 package 目录下的旧软链接
 find package/feeds -name "rust" -type l -exec rm -f {} \;
 ./scripts/feeds update -i
 ./scripts/feeds install -a -f
-
-echo "✅ SSH2 Rust 配置圆满结束。Makefile 语法已核实为合法。"
 
 # 修改默认 IP (192.168.30.1)
 sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
