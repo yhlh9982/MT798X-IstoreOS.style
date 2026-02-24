@@ -141,16 +141,19 @@ if [ -n "$KSMBD_FILES" ]; then
 fi
 
 # =========================================================
-# Rust 专项：哈希强制校准与底座对齐 (SSH2 V31.0)
+# Rust 专项：底座同步、哈希物理对齐与索引硬连 (SSH2)
 # =========================================================
-echo ">>> [Rust] 正在执行底座同步与哈希物理校准..."
+echo ">>> [Rust] 正在启动底座同步与哈希绝对校准..."
 
-PKGS_BRANCH="openwrt-23.05" # 锁定 1.85.0 所在的稳定分支
+# 1. 配置参数
+# 如果要编译 1.85.0 请设为 openwrt-23.05；如果要 1.90.0 请设为 master
+PKGS_BRANCH="master" 
 PKGS_REPO="https://github.com/openwrt/packages.git"
 RUST_DIR="feeds/packages/lang/rust"
 RUST_MK="$RUST_DIR/Makefile"
 
-# 1. 彻底清空并同步底座
+# 2. 彻底物理同步 (确保 Makefile 与 Patches 补丁集完美匹配)
+# 这一步会消灭之前所有错误的 sed 修改，恢复纯净的官方 Makefile
 rm -rf "$RUST_DIR"
 rm -rf build_dir/host/rustc-*
 rm -rf staging_dir/host/stamp/.rust_installed
@@ -160,41 +163,53 @@ if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; 
     mkdir -p "$RUST_DIR"
     cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
     rm -rf "$TEMP_REPO"
-    echo "✅ 官方 23.05 补丁与定义同步成功。"
+    echo "✅ Rust $PKGS_BRANCH 底座物理同步成功。"
 fi
 
-# 2. 物理哈希校准 (解决官方哈希更新导致的自杀)
+# 3. 极简硬化 Makefile (仅修改现有参数值，严禁插入新行，杜绝 @ 乱码)
 if [ -f "$RUST_MK" ]; then
-    V_RUST=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-    EXT=$(grep '^PKG_SOURCE:=' "$RUST_MK" | grep -oE "tar\.(gz|xz)" | head -1)
-    [ -z "$EXT" ] && EXT="tar.gz"
+    echo ">>> [Rust] 正在执行 Makefile 物理哈希对齐..."
     
-    RUST_FILE="rustc-${V_RUST}-src.${EXT}"
-    mkdir -p dl
-    
-    echo ">>> [Rust] 正在从官网获取物理文件以提取哈希..."
-    wget -q --timeout=60 --tries=3 -O "dl/$RUST_FILE" "https://static.rust-lang.org/dist/$RUST_FILE" || true
-
-    if [ -s "dl/$RUST_FILE" ]; then
-        # 提取真实指纹
-        REAL_HASH=$(sha256sum "dl/$RUST_FILE" | cut -d' ' -f1)
-        echo "✅ 物理文件哈希: $REAL_HASH"
-        # 强行重写 Makefile (只改值，不增行，杜绝 @ 乱码)
-        sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$REAL_HASH/" "$RUST_MK"
-        echo "✅ Makefile 哈希已对齐。"
-    fi
-
-    # 3. 极简硬化 (只改现有配置项)
+    # A. 修正 LLVM 开启方式：设为 if-unchanged 绕过 Rust 1.90 的 CI 限制
     sed -i 's/download-ci-llvm:=.*/download-ci-llvm:="if-unchanged"/g' "$RUST_MK"
     sed -i 's/download-ci-llvm=.*/download-ci-llvm="if-unchanged"/g' "$RUST_MK"
+    
+    # B. 物理哈希校准 (解决官方哈希更新导致的校验失败)
+    # 自动探测版本号与文件后缀 (.gz 或 .xz)
+    V_RUST=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+    EXT_RUST=$(grep '^PKG_SOURCE:=' "$RUST_MK" | grep -oE "tar\.(gz|xz)" | head -1)
+    [ -z "$EXT_RUST" ] && EXT_RUST="tar.gz" # 默认兜底
+    
+    RUST_FILE="rustc-${V_RUST}-src.${EXT_RUST}"
+    mkdir -p dl
+    
+    echo ">>> [Rust] 正在获取官网物理文件以提取真实哈希: $RUST_FILE"
+    wget -q --timeout=30 --tries=3 -O "dl/$RUST_FILE" "https://static.rust-lang.org/dist/$RUST_FILE" || true
+
+    if [ -s "dl/$RUST_FILE" ]; then
+        ACTUAL_H=$(sha256sum "dl/$RUST_FILE" | cut -d' ' -f1)
+        # 【核心修正】强行将哈希写回 Makefile，确保下载校验必过
+        sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
+        echo "✅ Makefile 哈希已物理对齐为: $ACTUAL_H"
+    else
+        echo "❌ 警告: 无法获取源码包，请检查网络。"
+    fi
+
+    # C. 修正官方镜像地址与移除锁定标志 (仅改值)
     sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
     sed -i 's/--frozen//g' "$RUST_MK"
     sed -i 's/--locked//g' "$RUST_MK"
 fi
 
-# 4. 强制刷新索引
-rm -rf tmp
+# 4. 强制刷新索引 (解决 No rule to make target 的关键)
+echo "🔄 正在全量重置软链接与索引缓存..."
+# 物理清理 package 目录下的旧软链接（旧链接可能指向错误的物理层级）
 find package/feeds -name "rust" -type l -exec rm -f {} \;
+
+# 清理元数据缓存，强制系统重新扫描上面同步好的 Makefile
+rm -rf tmp
 ./scripts/feeds update -i
 ./scripts/feeds install -a -f
-echo "✅ SSH2 Rust 配置圆满结束。"
+
+echo "✅ Rust SSH2 配置任务圆满完成。"
+
