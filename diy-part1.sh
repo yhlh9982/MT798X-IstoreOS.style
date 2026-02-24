@@ -26,6 +26,7 @@ git clone --depth=1 -b master https://github.com/QiuSimons/luci-app-daed  packag
 git clone --depth=1 -b master https://github.com/fw876/helloworld  package/helloworld
 
 # 功能插件
+git clone --depth=1 https://github.com/gdy666/luci-app-lucky package/lucky
 git clone --depth=1 https://github.com/sirpdboy/luci-app-watchdog package/watchdog
 git clone --depth=1 https://github.com/sirpdboy/luci-app-taskplan package/taskplan
 git clone --depth=1 https://github.com/iv7777/luci-app-authshield package/authshield
