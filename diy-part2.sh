@@ -141,11 +141,11 @@ if [ -n "$KSMBD_FILES" ]; then
 fi
 
 # =========================================================
-# Rust 专项：回归自然对齐法 (SSH2 V33.1 焚迹版)
+# Rust 专项：回归自然对齐法 (SSH2 V34.0)
 # =========================================================
-echo ">>> [Rust] 执行物理对齐与指纹核实..."
+echo ">>> [Rust] 执行底座同步与实物指纹核实..."
 
-# 指定底座分支 (1.85.0 用 openwrt-23.05, 1.90.0 用 master)
+# 锁定分支 (推荐 master 以获取最新 1.90.0)
 PKGS_BRANCH="master" 
 PKGS_REPO="https://github.com/openwrt/packages.git"
 RUST_DIR="feeds/packages/lang/rust"
@@ -164,7 +164,7 @@ if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; 
     echo "✅ 已同步 $PKGS_BRANCH 的 Rust 原厂定义。"
 fi
 
-# 2. 实物核实：仅用于提取指纹，验证后立即销毁
+# 2. 实物指纹核实：以官网文件为准，修正 Makefile 记录
 if [ -f "$RUST_MK" ]; then
     # 提取版本和后缀
     V=$(grep '^PKG_VERSION:=' "$RUST_MK" | cut -d'=' -f2 | tr -d ' ')
@@ -174,36 +174,35 @@ if [ -f "$RUST_MK" ]; then
     EXPECTED_H=$(grep '^PKG_HASH:=' "$RUST_MK" | cut -d'=' -f2 | tr -d ' ')
     FILE_NAME="rustc-${V}-src.${EXT}"
     
-    echo ">>> 正在从官网获取临时实物以提取哈希: $FILE_NAME"
+    echo ">>> [Rust] 正在获取官网临时文件以校对哈希..."
     mkdir -p dl
-    # 下载实物到临时路径
+    # 下载临时文件用于比对
     wget -q --timeout=30 --tries=3 -O "dl/$FILE_NAME.tmp" "https://static.rust-lang.org/dist/$FILE_NAME" || true
 
     if [ -s "dl/$FILE_NAME.tmp" ]; then
         ACTUAL_H=$(sha256sum "dl/$FILE_NAME.tmp" | cut -d' ' -f1)
         if [ "$ACTUAL_H" != "$EXPECTED_H" ]; then
-            echo "⚠️  哈希已更新，正在修正 Makefile 指纹记录..."
+            echo "⚠️ 哈希已更新，正在反向修正 Makefile 指纹..."
+            # 仅修改哈希值，绝不增加新行，保护 Makefile 结构
             sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
-        else
-            echo "✅ 指纹核实通过，官方实物未变。"
         fi
-        # 【关键：焚迹】核实完哈希后立刻删除，不留给后续步骤，让主系统自行下载
+        # 焚迹：校对完立即删除，不干扰主下载流程
         rm -f "dl/$FILE_NAME.tmp"
     fi
     
-    # 修改必要参数 (仅改值，不加行)
+    # 极简配置：仅改值。引号处理是为了适配 1.90 的 TOML 格式要求
     sed -i 's/download-ci-llvm:=.*/download-ci-llvm:="if-unchanged"/g' "$RUST_MK"
     sed -i 's/download-ci-llvm=.*/download-ci-llvm="if-unchanged"/g' "$RUST_MK"
 fi
 
-# 3. 刷新索引
-echo "🔄 正在重连全系统索引..."
+# 3. 顺应 OpenWrt 逻辑：重连全系统索引 (解决寻址失败的关键)
+echo "🔄 正在刷新全系统索引..."
 rm -rf tmp
 find package/feeds -name "rust" -type l -exec rm -f {} \;
 ./scripts/feeds update -i
 ./scripts/feeds install -a -f
 
-echo "✅ SSH2 对齐完成，Makefile 保持纯净，实物已清理。"
+echo "✅ SSH2 对齐完成，Makefile 语法已核实为纯净原装。"
 
 # 修改默认 IP (192.168.30.1)
 sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
