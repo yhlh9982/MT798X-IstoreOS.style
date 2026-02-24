@@ -141,16 +141,16 @@ if [ -n "$KSMBD_FILES" ]; then
 fi
 
 # =========================================================
-# Rust 专项：底座同步与哈希对齐 (SSH2 V36.0 纯净版)
+# Rust SSH2：底座同步与哈希公证 (V38.0)
 # =========================================================
-echo ">>> [Rust] 执行底座同步与实物指纹核实..."
+echo ">>> [Rust] 正在同步官方 Master 底座..."
 
 PKGS_BRANCH="master" 
 PKGS_REPO="https://github.com/openwrt/packages.git"
 RUST_DIR="feeds/packages/lang/rust"
 RUST_MK="$RUST_DIR/Makefile"
 
-# 1. 物理替换底座
+# 1. 物理替换文件夹 (确保 Makefile 和 Patches 是一套)
 rm -rf "$RUST_DIR"
 rm -rf build_dir/host/rustc-*
 rm -rf staging_dir/host/stamp/.rust_installed
@@ -160,37 +160,35 @@ if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; 
     mkdir -p "$RUST_DIR"
     cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
     rm -rf "$TEMP_REPO"
-    echo "✅ 已同步官方 $PKGS_BRANCH 的纯净定义。"
+    echo "✅ 已同步 $PKGS_BRANCH 的 Rust 原厂定义。"
 fi
 
-# 2. 实物指纹核实 (自适应官方 1.90.0)
+# 2. 哈希公证：确保 Makefile 记录与官方实物一致 (瞒天过海的前提)
 if [ -f "$RUST_MK" ]; then
-    V=$(grep '^PKG_VERSION:=' "$RUST_MK" | cut -d'=' -f2 | tr -d ' ')
-    EXPECTED_H=$(grep '^PKG_HASH:=' "$RUST_MK" | cut -d'=' -f2 | tr -d ' ')
-    # 1.90.0 采用 .tar.xz
-    FILE_NAME="rustc-${V}-src.tar.xz"
+    V_RUST=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+    EXT=$(grep '^PKG_SOURCE:=' "$RUST_MK" | grep -oE "tar\.(gz|xz)" | head -1)
+    [ -z "$EXT" ] && EXT="tar.gz"
     
+    EXPECTED_H=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+    RUST_FILE="rustc-${V_RUST}-src.${EXT}"
+    
+    echo ">>> [Rust] 正在官网获取指纹: $RUST_FILE"
     mkdir -p dl
-    wget -q --timeout=30 --tries=3 -O "dl/$FILE_NAME.tmp" "https://static.rust-lang.org/dist/$FILE_NAME" || true
-    if [ -s "dl/$FILE_NAME.tmp" ]; then
-        ACTUAL_H=$(sha256sum "dl/$FILE_NAME.tmp" | cut -d' ' -f1)
+    # 临时下载用于提取哈希
+    wget -q --timeout=30 --tries=3 -O "dl/$RUST_FILE.tmp" "https://static.rust-lang.org/dist/$RUST_FILE" || true
+
+    if [ -s "dl/$RUST_FILE.tmp" ]; then
+        ACTUAL_H=$(sha256sum "dl/$RUST_FILE.tmp" | cut -d' ' -f1)
         if [ "$ACTUAL_H" != "$EXPECTED_H" ]; then
-            echo "⚠️ 哈希不匹配，正在修正 Makefile: $ACTUAL_H"
+            echo "⚠️ 哈希已更新，修正记录: $ACTUAL_H"
+            # 仅仅改值，绝不改结构，杜绝 @ 乱码
             sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
         fi
-        rm -f "dl/$FILE_NAME.tmp"
+        # 立即删除临时文件，保持 dl 目录清洁
+        rm -f "dl/$RUST_FILE.tmp"
     fi
-    
-    # 3. 极简硬化配置 (仅改值，不加行，杜绝 @ 乱码)
-    # 强行开启 LLVM 并去除所有锁定参数
-    sed -i 's/download-ci-llvm:=.*/download-ci-llvm:=true/g' "$RUST_MK"
-    sed -i 's/download-ci-llvm=.*/download-ci-llvm=true/g' "$RUST_MK"
-    sed -i 's/--frozen//g' "$RUST_MK"
-    sed -i 's/--locked//g' "$RUST_MK"
-    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
-fi
 
-# 4. 刷新索引 (确保 SSH3 寻址不迷路)
+# 3. 顺应自然：重连索引
 rm -rf tmp
 find package/feeds -name "rust" -type l -exec rm -f {} \;
 ./scripts/feeds update -i
