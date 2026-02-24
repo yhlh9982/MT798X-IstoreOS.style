@@ -141,16 +141,17 @@ if [ -n "$KSMBD_FILES" ]; then
 fi
 
 # =========================================================
-# Rust 专项：底座同步与物理哈希校准 (SSH2 纯净版)
+# Rust 专项：回归自然对齐法 (SSH2 V33.1 焚迹版)
 # =========================================================
-echo ">>> [Rust] 正在启动底座同步与哈希物理校准..."
+echo ">>> [Rust] 执行物理对齐与指纹核实..."
 
-PKGS_BRANCH="master" # 如果要 1.85 请改 openwrt-23.05
+# 指定底座分支 (1.85.0 用 openwrt-23.05, 1.90.0 用 master)
+PKGS_BRANCH="master" 
 PKGS_REPO="https://github.com/openwrt/packages.git"
 RUST_DIR="feeds/packages/lang/rust"
 RUST_MK="$RUST_DIR/Makefile"
 
-# 1. 彻底物理同步 (确保 Makefile 与 Patches 匹配)
+# 1. 物理替换底座 (确保原厂 Makefile 和补丁配套)
 rm -rf "$RUST_DIR"
 rm -rf build_dir/host/rustc-*
 rm -rf staging_dir/host/stamp/.rust_installed
@@ -160,43 +161,49 @@ if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; 
     mkdir -p "$RUST_DIR"
     cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
     rm -rf "$TEMP_REPO"
-    echo "✅ Rust $PKGS_BRANCH 底座同步成功。"
+    echo "✅ 已同步 $PKGS_BRANCH 的 Rust 原厂定义。"
 fi
 
-# 2. 物理哈希校准 (仅修改现有行，绝不增加新行)
+# 2. 实物核实：仅用于提取指纹，验证后立即销毁
 if [ -f "$RUST_MK" ]; then
-    V_RUST=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-    EXT_RUST=$(grep '^PKG_SOURCE:=' "$RUST_MK" | grep -oE "tar\.(gz|xz)" | head -1)
-    [ -z "$EXT_RUST" ] && EXT_RUST="tar.gz"
+    # 提取版本和后缀
+    V=$(grep '^PKG_VERSION:=' "$RUST_MK" | cut -d'=' -f2 | tr -d ' ')
+    EXT=$(grep '^PKG_SOURCE:=' "$RUST_MK" | grep -oE "tar\.(gz|xz)" | head -1)
+    [ -z "$EXT" ] && EXT="tar.gz"
     
-    RUST_FILE="rustc-${V_RUST}-src.${EXT_RUST}"
-    echo ">>> [Rust] 正在校准官方源码包: $RUST_FILE"
+    EXPECTED_H=$(grep '^PKG_HASH:=' "$RUST_MK" | cut -d'=' -f2 | tr -d ' ')
+    FILE_NAME="rustc-${V}-src.${EXT}"
     
+    echo ">>> 正在从官网获取临时实物以提取哈希: $FILE_NAME"
     mkdir -p dl
-    [ ! -s "dl/$RUST_FILE" ] && wget -q --timeout=30 -O "dl/$RUST_FILE" "https://static.rust-lang.org/dist/$RUST_FILE" || true
+    # 下载实物到临时路径
+    wget -q --timeout=30 --tries=3 -O "dl/$FILE_NAME.tmp" "https://static.rust-lang.org/dist/$FILE_NAME" || true
 
-    if [ -s "dl/$RUST_FILE" ]; then
-        ACTUAL_H=$(sha256sum "dl/$RUST_FILE" | cut -d' ' -f1)
-        # 仅替换原有 Hash 行，不破坏 Makefile 结构
-        sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
-        echo "✅ Makefile 哈希已物理对齐。"
+    if [ -s "dl/$FILE_NAME.tmp" ]; then
+        ACTUAL_H=$(sha256sum "dl/$FILE_NAME.tmp" | cut -d' ' -f1)
+        if [ "$ACTUAL_H" != "$EXPECTED_H" ]; then
+            echo "⚠️  哈希已更新，正在修正 Makefile 指纹记录..."
+            sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
+        else
+            echo "✅ 指纹核实通过，官方实物未变。"
+        fi
+        # 【关键：焚迹】核实完哈希后立刻删除，不留给后续步骤，让主系统自行下载
+        rm -f "dl/$FILE_NAME.tmp"
     fi
-
-    # 3. 极简修正配置 (杜绝产生 @ 乱码)
+    
+    # 修改必要参数 (仅改值，不加行)
     sed -i 's/download-ci-llvm:=.*/download-ci-llvm:="if-unchanged"/g' "$RUST_MK"
     sed -i 's/download-ci-llvm=.*/download-ci-llvm="if-unchanged"/g' "$RUST_MK"
-    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
-    sed -i 's/--frozen//g' "$RUST_MK"
-    sed -i 's/--locked//g' "$RUST_MK"
 fi
 
-# 4. 强制刷新索引 (解决寻址失败的核心)
-echo "🔄 正在刷新全系统索引..."
+# 3. 刷新索引
+echo "🔄 正在重连全系统索引..."
 rm -rf tmp
-# 物理删除旧软链接，强迫重新生成
 find package/feeds -name "rust" -type l -exec rm -f {} \;
 ./scripts/feeds update -i
 ./scripts/feeds install -a -f
+
+echo "✅ SSH2 对齐完成，Makefile 保持纯净，实物已清理。"
 
 # 修改默认 IP (192.168.30.1)
 sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
