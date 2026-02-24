@@ -205,6 +205,7 @@ sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py 
 # 6. 其它兼容修正
 sed -i 's/--frozen//g' "$RUST_MK"
 sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
+fi 
 
 # 3. 顺应 OpenWrt 逻辑：重连全系统索引 (解决寻址失败的关键)
 echo "🔄 正在刷新全系统索引..."
