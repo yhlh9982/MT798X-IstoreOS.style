@@ -189,11 +189,22 @@ if [ -f "$RUST_MK" ]; then
         # 焚迹：校对完立即删除，不干扰主下载流程
         rm -f "dl/$FILE_NAME.tmp"
     fi
-    
-    # 极简配置：仅改值。引号处理是为了适配 1.90 的 TOML 格式要求
-    sed -i 's/download-ci-llvm:=.*/download-ci-llvm:="if-unchanged"/g' "$RUST_MK"
-    sed -i 's/download-ci-llvm=.*/download-ci-llvm="if-unchanged"/g' "$RUST_MK"
-fi
+
+# ==========================================
+# 第三步：注入本地编译硬化优化
+# ==========================================
+echo ">>> [3/5] 注入本地编译加速与容错指令..."
+
+# 1. 强制启用预编译 LLVM (CI-LLVM)
+sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
+sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
+
+# 5. 限制并行链接任务 (关键：防止 15G RAM 被撑爆)
+sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$RUST_MK"
+
+# 6. 其它兼容修正
+sed -i 's/--frozen//g' "$RUST_MK"
+sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
 
 # 3. 顺应 OpenWrt 逻辑：重连全系统索引 (解决寻址失败的关键)
 echo "🔄 正在刷新全系统索引..."
