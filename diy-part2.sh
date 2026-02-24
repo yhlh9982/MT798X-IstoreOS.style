@@ -143,14 +143,14 @@ fi
 # =========================================================
 # Rust SSH2：底座同步与哈希公证 (V38.0)
 # =========================================================
-echo ">>> [Rust] 正在同步官方 Master 底座..."
+echo ">>> [3/4] 正在执行 Rust 底座同步与哈希校准..."
 
 PKGS_BRANCH="master" 
 PKGS_REPO="https://github.com/openwrt/packages.git"
 RUST_DIR="feeds/packages/lang/rust"
 RUST_MK="$RUST_DIR/Makefile"
 
-# 1. 物理替换文件夹 (确保 Makefile 和 Patches 是一套)
+# A. 物理同步官方底座
 rm -rf "$RUST_DIR"
 rm -rf build_dir/host/rustc-*
 rm -rf staging_dir/host/stamp/.rust_installed
@@ -160,35 +160,33 @@ if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; 
     mkdir -p "$RUST_DIR"
     cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
     rm -rf "$TEMP_REPO"
-    echo "✅ 已同步 $PKGS_BRANCH 的 Rust 原厂定义。"
+    echo "✅ 已同步官方原厂定义。"
 fi
 
-# 2. 哈希公证：确保 Makefile 记录与官方实物一致 (瞒天过海的前提)
+# B. 实物指纹公证：这是确保下一步能够下载成功的唯一干预
 if [ -f "$RUST_MK" ]; then
     V_RUST=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-    EXT=$(grep '^PKG_SOURCE:=' "$RUST_MK" | grep -oE "tar\.(gz|xz)" | head -1)
-    [ -z "$EXT" ] && EXT="tar.gz"
+    EXT_RUST=$(grep '^PKG_SOURCE:=' "$RUST_MK" | grep -oE "tar\.(gz|xz)" | head -1)
+    [ -z "$EXT_RUST" ] && EXT_RUST="tar.gz"
     
     EXPECTED_H=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-    RUST_FILE="rustc-${V_RUST}-src.${EXT}"
+    FILE_NAME="rustc-${V_RUST}-src.${EXT_RUST}"
     
-    echo ">>> [Rust] 正在官网获取指纹: $RUST_FILE"
+    echo ">>> 正在核实官网实物哈希: $FILE_NAME"
     mkdir -p dl
-    # 临时下载用于提取哈希
-    wget -q --timeout=30 --tries=3 -O "dl/$RUST_FILE.tmp" "https://static.rust-lang.org/dist/$RUST_FILE" || true
+    wget -q --timeout=30 --tries=3 -O "dl/$FILE_NAME.tmp" "https://static.rust-lang.org/dist/$FILE_NAME" || true
 
-    if [ -s "dl/$RUST_FILE.tmp" ]; then
-        ACTUAL_H=$(sha256sum "dl/$RUST_FILE.tmp" | cut -d' ' -f1)
+    if [ -s "dl/$FILE_NAME.tmp" ]; then
+        ACTUAL_H=$(sha256sum "dl/$FILE_NAME.tmp" | cut -d' ' -f1)
         if [ "$ACTUAL_H" != "$EXPECTED_H" ]; then
-            echo "⚠️ 哈希已更新，修正记录: $ACTUAL_H"
-            # 仅仅改值，绝不改结构，杜绝 @ 乱码
+            echo "⚠️ 哈希不匹配，修正 Makefile 记录: $ACTUAL_H"
             sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
         fi
-        # 立即删除临时文件，保持 dl 目录清洁
-        rm -f "dl/$RUST_FILE.tmp"
+        rm -f "dl/$FILE_NAME.tmp"
     fi
+fi
 
-# 3. 顺应自然：重连索引
+echo ">>> [4/4] 强制刷新全系统索引..."
 rm -rf tmp
 find package/feeds -name "rust" -type l -exec rm -f {} \;
 ./scripts/feeds update -i
