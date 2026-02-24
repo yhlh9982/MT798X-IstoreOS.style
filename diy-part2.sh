@@ -141,17 +141,16 @@ if [ -n "$KSMBD_FILES" ]; then
 fi
 
 # =========================================================
-# Rust 专项：回归自然对齐法 (SSH2 V34.0)
+# Rust 专项：底座同步与哈希对齐 (SSH2 V36.0 纯净版)
 # =========================================================
 echo ">>> [Rust] 执行底座同步与实物指纹核实..."
 
-# 锁定分支 (推荐 master 以获取最新 1.90.0)
 PKGS_BRANCH="master" 
 PKGS_REPO="https://github.com/openwrt/packages.git"
 RUST_DIR="feeds/packages/lang/rust"
 RUST_MK="$RUST_DIR/Makefile"
 
-# 1. 物理替换底座 (确保原厂 Makefile 和补丁配套)
+# 1. 物理替换底座
 rm -rf "$RUST_DIR"
 rm -rf build_dir/host/rustc-*
 rm -rf staging_dir/host/stamp/.rust_installed
@@ -161,64 +160,43 @@ if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; 
     mkdir -p "$RUST_DIR"
     cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
     rm -rf "$TEMP_REPO"
-    echo "✅ 已同步 $PKGS_BRANCH 的 Rust 原厂定义。"
+    echo "✅ 已同步官方 $PKGS_BRANCH 的纯净定义。"
 fi
 
-# 2. 实物指纹核实：以官网文件为准，修正 Makefile 记录
+# 2. 实物指纹核实 (自适应官方 1.90.0)
 if [ -f "$RUST_MK" ]; then
-    # 提取版本和后缀
     V=$(grep '^PKG_VERSION:=' "$RUST_MK" | cut -d'=' -f2 | tr -d ' ')
-    EXT=$(grep '^PKG_SOURCE:=' "$RUST_MK" | grep -oE "tar\.(gz|xz)" | head -1)
-    [ -z "$EXT" ] && EXT="tar.gz"
-    
     EXPECTED_H=$(grep '^PKG_HASH:=' "$RUST_MK" | cut -d'=' -f2 | tr -d ' ')
-    FILE_NAME="rustc-${V}-src.${EXT}"
+    # 1.90.0 采用 .tar.xz
+    FILE_NAME="rustc-${V}-src.tar.xz"
     
-    echo ">>> [Rust] 正在获取官网临时文件以校对哈希..."
     mkdir -p dl
-    # 下载临时文件用于比对
     wget -q --timeout=30 --tries=3 -O "dl/$FILE_NAME.tmp" "https://static.rust-lang.org/dist/$FILE_NAME" || true
-
     if [ -s "dl/$FILE_NAME.tmp" ]; then
         ACTUAL_H=$(sha256sum "dl/$FILE_NAME.tmp" | cut -d' ' -f1)
         if [ "$ACTUAL_H" != "$EXPECTED_H" ]; then
-            echo "⚠️ 哈希已更新，正在反向修正 Makefile 指纹..."
-            # 仅修改哈希值，绝不增加新行，保护 Makefile 结构
+            echo "⚠️ 哈希不匹配，正在修正 Makefile: $ACTUAL_H"
             sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
         fi
-        # 焚迹：校对完立即删除，不干扰主下载流程
         rm -f "dl/$FILE_NAME.tmp"
     fi
+    
+    # 3. 极简硬化配置 (仅改值，不加行，杜绝 @ 乱码)
+    # 强行开启 LLVM 并去除所有锁定参数
+    sed -i 's/download-ci-llvm:=.*/download-ci-llvm:=true/g' "$RUST_MK"
+    sed -i 's/download-ci-llvm=.*/download-ci-llvm=true/g' "$RUST_MK"
+    sed -i 's/--frozen//g' "$RUST_MK"
+    sed -i 's/--locked//g' "$RUST_MK"
+    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
+fi
 
-# ==========================================
-# 第三步：注入本地编译硬化优化
-# ==========================================
-echo ">>> [3/5] 注入本地编译加速与容错指令..."
-
-# 1. 强制启用预编译 LLVM (CI-LLVM)
-sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
-sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
-
-# 5. 限制并行链接任务 (关键：防止 15G RAM 被撑爆)
-sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$RUST_MK"
-
-# 6. 其它兼容修正
-sed -i 's/--frozen//g' "$RUST_MK"
-sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
-fi 
-
-# 3. 顺应 OpenWrt 逻辑：重连全系统索引 (解决寻址失败的关键)
-echo "🔄 正在刷新全系统索引..."
+# 4. 刷新索引 (确保 SSH3 寻址不迷路)
 rm -rf tmp
 find package/feeds -name "rust" -type l -exec rm -f {} \;
 ./scripts/feeds update -i
 ./scripts/feeds install -a -f
 
-echo "✅ SSH2 对齐完成，Makefile 语法已核实为纯净原装。"
-
 # 修改默认 IP (192.168.30.1)
 sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
 
-echo "=========================================="
-echo "自定义脚本执行完毕"
-echo "=========================================="
+echo "✅ SSH2 配置完成。"
