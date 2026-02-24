@@ -211,5 +211,9 @@ rm -rf tmp
 ./scripts/feeds update -i
 ./scripts/feeds install -a -f
 
-echo "✅ Rust SSH2 配置任务圆满完成。"
+# 修改默认 IP (192.168.30.1)
+sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
 
+echo "=========================================="
+echo "自定义脚本执行完毕"
+echo "=========================================="
