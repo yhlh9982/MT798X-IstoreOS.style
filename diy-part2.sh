@@ -159,9 +159,26 @@ cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
 rm -rf "$TEMP_REPO"
 echo "✅ 成功锁定 $PKGS_BRANCH 版本的 Makefile 和 Patches。"
 
-# 7. 基础刷新 
-echo ">>> [4/5] 强制刷新编译系统索引..."
-rm -rf "$OPENWRT_ROOT/tmp"
+# B. 极简硬化配置 (仅修改参数值，严禁插入新行)
+if [ -f "$RUST_MK" ]; then
+    # 1. 硬件探测：根据内存自动选择核心数
+    MEM_TOTAL=$(free -g | awk '/^Mem:/{print $2}')
+    [ "$MEM_TOTAL" -gt 12 ] && RUST_THREADS=2 || RUST_THREADS=1
+    echo "📊 系统内存: ${MEM_TOTAL}G | 为 Rust 分配核心: -j$RUST_THREADS"
+
+    # 3. 注入核心数限制 (原位替换，不破坏语法)
+    sed -i "s/x.py/x.py -j $RUST_THREADS/g" "$RUST_MK"
+
+    # 4. 移除锁定与修正地址
+    sed -i 's/--frozen//g' "$RUST_MK"
+    sed -i 's/--locked//g' "$RUST_MK"
+fi
+
+# 索引刷新 (强制重连血脉)
+echo ">>> [4/6] 强制刷新全系统索引..."
+rm -rf tmp
+# 物理删除旧链接，强迫重新生成
+find package/feeds -name "rust" -type l -exec rm -f {} \;
 ./scripts/feeds update -i
 ./scripts/feeds install -a -f
 
