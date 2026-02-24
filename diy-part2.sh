@@ -111,33 +111,20 @@ mv $WORKINGDIR/luci-app-smartdns-${LUCIBRANCH}/* $WORKINGDIR/
 rmdir $WORKINGDIR/luci-app-smartdns-${LUCIBRANCH}
 rm $WORKINGDIR/${LUCIBRANCH}.zip
 
-# ---------------------------------------------------------
-# 5. 菜单位置调整 (Tailscale & KSMBD)
-# ---------------------------------------------------------
-echo ">>> 调整插件菜单位置..."
-
-# 5.1 Tailscale -> VPN
-TS_FILES=$(grep -rl "admin/services/tailscale" package/tailscale 2>/dev/null)
-if [ -n "$TS_FILES" ]; then
-    for file in $TS_FILES; do
-        [[ "$file" == *"acl.d"* ]] && continue
-        sed -i 's|admin/services/tailscale|admin/vpn/tailscale|g' "$file"
-        sed -i 's/"parent": "luci.services"/"parent": "luci.vpn"/g' "$file"
-    done
-    echo "✅ Tailscale 菜单已移动到 VPN"
+# 5.1 Tailscale -> VPN (只在 tailscale 目录下改)
+if [ -d "package/tailscale" ]; then
+    find package/tailscale -type f -exec sed -i 's|admin/services/tailscale|admin/vpn/tailscale|g' {} +
+    find package/tailscale -type f -exec sed -i 's/"parent": "luci.services"/"parent": "luci.vpn"/g' {} +
+    echo "✅ Tailscale 菜单已移动"
 fi
 
-# 5.2 KSMBD -> NAS
-# 扩大搜索范围，防止文件不在预期位置
-KSMBD_FILES=$(grep -rl "admin/services/ksmbd" feeds package 2>/dev/null)
-if [ -n "$KSMBD_FILES" ]; then
-    for file in $KSMBD_FILES; do
-        [[ "$file" == *"acl.d"* ]] && continue
-        sed -i 's|admin/services/ksmbd|admin/nas/ksmbd|g' "$file"
-        sed -i 's/"parent": "luci.services"/"parent": "luci.nas"/g' "$file"
-        sed -i "s/'parent': 'luci.services'/'parent': 'luci.nas'/g" "$file"
-    done
-    echo "✅ KSMBD 菜单已移动到 NAS"
+# 5.2 KSMBD -> NAS (只在 ksmbd 目录下改)
+# 自动定位 ksmbd 插件的物理目录，通常在 feeds/luci 下
+KSMBD_DIR=$(find feeds/luci -type d -name "luci-app-ksmbd" | head -n 1)
+if [ -n "$KSMBD_DIR" ]; then
+    find "$KSMBD_DIR" -type f -exec sed -i 's|admin/services/ksmbd|admin/nas/ksmbd|g' {} +
+    find "$KSMBD_DIR" -type f -exec sed -i 's/"parent": "luci.services"/"parent": "luci.nas"/g' {} +
+    echo "✅ KSMBD 菜单已移动"
 fi
 
 echo "=========================================="
