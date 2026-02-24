@@ -163,7 +163,7 @@ if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; 
     echo "✅ 已同步官方 Master 底座。"
 fi
 
-# 3. 基础刷新 (不跑 defconfig，防止在这里卡死)
+# 基础刷新 
 ./scripts/feeds update -i
 ./scripts/feeds install -a -f
 
