@@ -145,7 +145,7 @@ fi
 # =========================================================
 echo ">>> [Rust] 执行分支rust替换..."
 
-PKGS_BRANCH="master" 
+PKGS_BRANCH="openwrt-23.05" 
 PKGS_REPO="https://github.com/openwrt/packages.git"
 RUST_DIR="feeds/packages/lang/rust"
 RUST_MK="$RUST_DIR/Makefile"
