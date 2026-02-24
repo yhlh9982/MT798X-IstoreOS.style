@@ -1,31 +1,21 @@
 #!/bin/bash
 # diy-part3.sh
 set -e
-OPENWRT_ROOT="/workdir/openwrt"
-cd "$OPENWRT_ROOT"
+OPENWRT_ROOT=$(pwd)
 
 echo "=========================================="
-echo "执行 SSH3: Rust 专项救治 (V31.2 外部驱动版)"
+echo "执行 SSH3: Rust 专项救治 (V32.0 变量外部驱动版)"
 echo "=========================================="
 
-# 1. 强力建立逻辑入口 (解决 No rule 报错的最后保险)
-RUST_PHYSICAL=$(find feeds/packages -type d -name "rust" | head -n 1)
-if [ -n "$RUST_PHYSICAL" ]; then
-    rm -rf package/rust
-    ln -sf "../$RUST_PHYSICAL" package/rust
-    echo "✅ 路径硬接通: package/rust -> $RUST_PHYSICAL"
-fi
-
-# 2. 刷新配置
-rm -rf tmp
+# 1. 刷新配置
 make defconfig
 
-# 3. 执行预处理
+# 2. 执行预处理 (回归你最成功的寻址路径)
 echo ">>> [1/3] 执行源码解压..."
-# 此时路径一定存在 (package/rust)
-make package/rust/host/prepare V=s || make package/feeds/packages/rust/host/prepare V=s
+make package/feeds/packages/rust/host/prepare V=s || \
+make package/feeds/packages/lang/rust/host/prepare V=s
 
-# 4. 指纹重构 (Python 抹平)
+# 3. 账本伪造手术 (Python 逻辑：100% 无乱码)
 echo ">>> [2/3] 执行指纹重构手术..."
 RUST_SRC_DIR=$(find build_dir -type d -name "rustc-*-src" | head -n 1)
 
@@ -41,26 +31,29 @@ for root, dirs, files in os.walk('$RUST_SRC_DIR/vendor'):
 "
     find "$RUST_SRC_DIR" -name "Cargo.lock" -exec sed -i '/checksum = /d' {} \;
     find "$RUST_SRC_DIR" -name "*.orig" -delete 2>/dev/null || true
-    echo "✅ 物理净化完成。"
+    echo "✅ 账本物理抹平完成。"
 else
-    echo "❌ 严重错误: 源码解压失败。"
+    echo "❌ 严重错误: 源码未解压成功。"
     exit 1
 fi
 
-# 5. 稳健编译
-echo ">>> [3/3] 启动独立编译阶段..."
+# 4. 稳健编译
+echo ">>> [3/3] 启动独立编译阶段 (降压限流)..."
 rm -rf staging_dir/host/stamp/.rust_installed
 
-# 【取代之前 Makefile 注入的 export 指令，在这里安全导出】
+# 【取代 Makefile 注入】：在这里实时导出所有欺骗变量
 export CARGO_NET_OFFLINE=true
 export CARGO_PROFILE_RELEASE_DEBUG=false
 export CARGO_INCREMENTAL=0
+export RUST_BACKTRACE=1
 
+# 硬件自适应
 MEM_TOTAL=$(free -g | awk '/^Mem:/{print $2}')
 [ "$MEM_TOTAL" -gt 12 ] && T=2 || T=1
 
-# 隐匿 CI 身份执行
-env -u CI -u GITHUB_ACTIONS make package/rust/host/compile -j$T V=s
+# 隐匿身份执行全路径编译
+env -u CI -u GITHUB_ACTIONS make package/feeds/packages/rust/host/compile -j$T V=s || \
+env -u CI -u GITHUB_ACTIONS make package/feeds/packages/lang/rust/host/compile -j$T V=s
 
 echo "=========================================="
 echo "✅ Rust 救治圆满完成！"
