@@ -172,66 +172,6 @@ cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
 rm -rf "$TEMP_REPO"
 echo "✅ 成功锁定 $PKGS_BRANCH 版本的 Makefile 和 Patches。"
 
-# ==========================================
-# 第二步：多重下载与哈希自适应校验
-# ==========================================
-V=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-EXPECTED_H=$(grep '^PKG_HASH:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
-RUST_FILE="rustc-${V}-src.tar.xz"
-DL_PATH="$DL_DIR/$RUST_FILE"
-
-mkdir -p "$DL_DIR"
-
-echo ">>> [2/5] 正在从官网获取版本 $V 的源码..."
-# 先删掉之前可能下载失败的残留
-rm -f "$DL_PATH"
-
-# 权威来源下载
-wget -q --timeout=60 --tries=3 -O "$DL_PATH" "$RUST_OFFICIAL_URL/$RUST_FILE"
-
-if [ -s "$DL_PATH" ]; then
-    ACTUAL_H=$(sha256sum "$DL_PATH" | cut -d' ' -f1)
-    if [ "$ACTUAL_H" == "$EXPECTED_H" ]; then
-        echo "✅ 哈希校验一致：$ACTUAL_H"
-    else
-        echo "⚠️ 哈希不匹配！物理文件: $ACTUAL_H | Makefile 记录: $EXPECTED_H"
-        echo ">>> 正在执行物理对齐：强行修正 Makefile 以适配物理文件..."
-        sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
-        echo "✅ 哈希记录已更新。"
-    fi
-else
-    echo "❌ 致命错误：源码包下载失败，请检查 Actions 网络。"
-    exit 1
-fi
-
-# ==========================================
-# 第三步：注入本地编译硬化优化
-# ==========================================
-echo ">>> [3/5] 注入本地编译加速与容错指令..."
-
-# 1. 强制启用预编译 LLVM (CI-LLVM)
-sed -i 's/download-ci-llvm:=false/download-ci-llvm:=true/g' "$RUST_MK"
-sed -i 's/download-ci-llvm=false/download-ci-llvm=true/g' "$RUST_MK"
-
-# 2. 暴力解决补丁残余 (.orig) - 注入到 Build/Patch 后
-# 使用 Tab 键开头确保符合 Makefile 语法
-sed -i '/Build\/Patch/a \	find $(HOST_BUILD_DIR) -name "*.orig" -delete\n	find $(HOST_BUILD_DIR) -name "*.rej" -delete' "$RUST_MK"
-
-# 3. 暴力屏蔽 Checksum 校验 - 注入到 x.py 执行前
-# 确保在 $(PYTHON3) 命令前插入，删除所有 vendor 下的 json 校验
-sed -i '/\$(PYTHON3) \$(HOST_BUILD_DIR)\/x.py/i \	find $(HOST_BUILD_DIR)/vendor -name .cargo-checksum.json -delete' "$RUST_MK"
-
-# 4. 环境变量硬化
-# 禁用增量编译，防止 Actions 文件系统同步导致的问题
-sed -i '/export CARGO_HOME/a export CARGO_PROFILE_RELEASE_DEBUG=false\nexport CARGO_PROFILE_RELEASE_INCREMENTAL=false\nexport CARGO_INCREMENTAL=0' "$RUST_MK"
-
-# 5. 限制并行链接任务 (关键：防止 15G RAM 被撑爆)
-sed -i 's/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py/$(PYTHON3) $(HOST_BUILD_DIR)\/x.py -j 2/g' "$RUST_MK"
-
-# 6. 其它兼容修正
-sed -i 's/--frozen//g' "$RUST_MK"
-sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
-
 # 7. 基础刷新 
 echo ">>> [4/5] 强制刷新编译系统索引..."
 rm -rf "$OPENWRT_ROOT/tmp"
