@@ -153,6 +153,21 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
+    # 8.1 优先编译基础工具 (新加入，必做)
+    - name: Build Tools
+      run: |
+        cd openwrt
+        # 编译补丁工具、解压工具等
+        make tools/install -j$(nproc) || make tools/install -j1 V=s
+
+    # 8.2 优先编译交叉编译器 (新加入，解决 gcc not found)
+    - name: Build Toolchain
+      run: |
+        cd openwrt
+        # 这一步会生成 aarch64-openwrt-linux-musl-gcc
+        make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
+
+
     # 6. 加载自定义配置 (diy-part3.sh)
     - name: Load custom configuration （加载自定义配置diy-part3）
       run: |
