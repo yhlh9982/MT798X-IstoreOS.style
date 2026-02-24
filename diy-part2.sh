@@ -159,14 +159,6 @@ cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
 rm -rf "$TEMP_REPO"
 echo "✅ 成功锁定 $PKGS_BRANCH 版本的 Makefile 和 Patches。"
 
-# B. 极简硬化配置 (仅修改参数值，严禁插入新行)
-if [ -f "$RUST_MK" ]; then
-    # 1. 硬件探测：根据内存自动选择核心数
-    MEM_TOTAL=$(free -g | awk '/^Mem:/{print $2}')
-    [ "$MEM_TOTAL" -gt 12 ] && RUST_THREADS=2 || RUST_THREADS=1
-    echo "📊 系统内存: ${MEM_TOTAL}G | 为 Rust 分配核心: -j$RUST_THREADS"
-fi
-
 # 索引刷新 (强制重连血脉)
 echo ">>> [4/6] 强制刷新全系统索引..."
 rm -rf tmp
