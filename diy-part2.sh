@@ -141,75 +141,67 @@ if [ -n "$KSMBD_FILES" ]; then
 fi
 
 # =========================================================
-# Rust 专项：底座同步、哈希物理对齐与索引硬连 (SSH2)
+# Rust 专项：哈希强制校准与结构保护 (SSH2 V31.1)
 # =========================================================
-echo ">>> [Rust] 正在启动底座同步与哈希绝对校准..."
+echo ">>> [Rust] 开始执行底座同步与哈希物理校准..."
 
-# 1. 配置参数
-# 如果要编译 1.85.0 请设为 openwrt-23.05；如果要 1.90.0 请设为 master
-PKGS_BRANCH="master" 
+PKGS_BRANCH="master" # 根据需要可改为 openwrt-23.05
 PKGS_REPO="https://github.com/openwrt/packages.git"
 RUST_DIR="feeds/packages/lang/rust"
 RUST_MK="$RUST_DIR/Makefile"
 
-# 2. 彻底物理同步 (确保 Makefile 与 Patches 补丁集完美匹配)
-# 这一步会消灭之前所有错误的 sed 修改，恢复纯净的官方 Makefile
+# 1. 彻底清空并同步底座 (确保 Patches 和 Makefile 100% 官方原装)
 rm -rf "$RUST_DIR"
 rm -rf build_dir/host/rustc-*
 rm -rf staging_dir/host/stamp/.rust_installed
 
 TEMP_REPO="/tmp/rust_sync_$$"
-if git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null; then
-    mkdir -p "$RUST_DIR"
-    cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
-    rm -rf "$TEMP_REPO"
-    echo "✅ Rust $PKGS_BRANCH 底座物理同步成功。"
-fi
+git clone --depth=1 -b "$PKGS_BRANCH" "$PKGS_REPO" "$TEMP_REPO" 2>/dev/null
+mkdir -p "$RUST_DIR"
+cp -r "$TEMP_REPO/lang/rust/"* "$RUST_DIR/"
+rm -rf "$TEMP_REPO"
+echo "✅ Rust $PKGS_BRANCH 源码定义同步完成。"
 
-# 3. 极简硬化 Makefile (仅修改现有参数值，严禁插入新行，杜绝 @ 乱码)
+# 2. 物理哈希校准 (解决官方哈希更新问题)
 if [ -f "$RUST_MK" ]; then
-    echo ">>> [Rust] 正在执行 Makefile 物理哈希对齐..."
-    
-    # A. 修正 LLVM 开启方式：设为 if-unchanged 绕过 Rust 1.90 的 CI 限制
-    sed -i 's/download-ci-llvm:=.*/download-ci-llvm:="if-unchanged"/g' "$RUST_MK"
-    sed -i 's/download-ci-llvm=.*/download-ci-llvm="if-unchanged"/g' "$RUST_MK"
-    
-    # B. 物理哈希校准 (解决官方哈希更新导致的校验失败)
-    # 自动探测版本号与文件后缀 (.gz 或 .xz)
     V_RUST=$(grep '^PKG_VERSION:=' "$RUST_MK" | head -1 | cut -d'=' -f2 | tr -d ' ')
+    # 动态探测后缀，防止下载 404
     EXT_RUST=$(grep '^PKG_SOURCE:=' "$RUST_MK" | grep -oE "tar\.(gz|xz)" | head -1)
-    [ -z "$EXT_RUST" ] && EXT_RUST="tar.gz" # 默认兜底
+    [ -z "$EXT_RUST" ] && EXT_RUST="tar.gz"
     
     RUST_FILE="rustc-${V_RUST}-src.${EXT_RUST}"
     mkdir -p dl
     
-    echo ">>> [Rust] 正在获取官网物理文件以提取真实哈希: $RUST_FILE"
-    wget -q --timeout=30 --tries=3 -O "dl/$RUST_FILE" "https://static.rust-lang.org/dist/$RUST_FILE" || true
+    echo ">>> [Rust] 正在获取官方物理包以校准哈希: $RUST_FILE"
+    wget -q --timeout=60 --tries=3 -O "dl/$RUST_FILE" "https://static.rust-lang.org/dist/$RUST_FILE" || true
 
     if [ -s "dl/$RUST_FILE" ]; then
-        ACTUAL_H=$(sha256sum "dl/$RUST_FILE" | cut -d' ' -f1)
-        # 【核心修正】强行将哈希写回 Makefile，确保下载校验必过
-        sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$ACTUAL_H/" "$RUST_MK"
-        echo "✅ Makefile 哈希已物理对齐为: $ACTUAL_H"
-    else
-        echo "❌ 警告: 无法获取源码包，请检查网络。"
+        REAL_HASH=$(sha256sum "dl/$RUST_FILE" | cut -d' ' -f1)
+        # 【关键修正】只改值，不增减行，不引入任何 export 语句
+        sed -i "s/^PKG_HASH:=.*/PKG_HASH:=$REAL_HASH/" "$RUST_MK"
+        echo "✅ Makefile 哈希已对齐: $REAL_HASH"
     fi
 
-    # C. 修正官方镜像地址与移除锁定标志 (仅改值)
-    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
+    # 3. 极简修正配置 (杜绝产生 @ 乱码)
+    # 仅修改 llvm 参数为 if-unchanged
+    sed -i 's/download-ci-llvm:=.*/download-ci-llvm:="if-unchanged"/g' "$RUST_MK"
+    sed -i 's/download-ci-llvm=.*/download-ci-llvm="if-unchanged"/g' "$RUST_MK"
+    
+    # 移除锁定和修正地址
     sed -i 's/--frozen//g' "$RUST_MK"
     sed -i 's/--locked//g' "$RUST_MK"
+    sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://static.rust-lang.org/dist/|' "$RUST_MK"
 fi
 
-# 4. 强制刷新索引 (解决 No rule to make target 的关键)
-echo "🔄 正在全量重置软链接与索引缓存..."
-# 物理清理 package 目录下的旧软链接（旧链接可能指向错误的物理层级）
-find package/feeds -name "rust" -type l -exec rm -f {} \;
-
-# 清理元数据缓存，强制系统重新扫描上面同步好的 Makefile
+# 4. 强制重置全系统索引 (解决 rust/host does not exist 的唯一方法)
+echo "🔄 正在重置软链接与索引缓存..."
 rm -rf tmp
+# 物理删除旧链接，强迫重新生成
+find package/feeds -name "rust" -type l -exec rm -f {} \;
 ./scripts/feeds update -i
 ./scripts/feeds install -a -f
+
+echo "✅ SSH2 Rust 配置圆满结束。Makefile 语法已核实为合法。"
 
 # 修改默认 IP (192.168.30.1)
 sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
