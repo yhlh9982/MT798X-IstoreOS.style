@@ -10,8 +10,8 @@ env:
   # 设备名称，用于生成发布标签
   DEVICE_NAME: istore-clx-s20p
   # 源码仓库地址
-  REPO_URL: https://github.com/dailook/immortalwrt-mt798x-6.6
-  #REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
+  #REPO_URL: https://github.com/dailook/immortalwrt-mt798x-6.6
+  REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
   # 源码分支
   REPO_BRANCH: openwrt-24.10-6.6
   # Feeds 配置文件名
