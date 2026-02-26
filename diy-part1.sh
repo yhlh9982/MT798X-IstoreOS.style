@@ -35,7 +35,7 @@ git clone --depth=1 https://github.com/Tokisaki-Galaxy/luci-app-tailscale-commun
 git clone --depth=1 https://github.com/isalikai/luci-app-owq-wol package/luci-app-owq-wol
 
 # 主题
-git clone --depth=1 -b openwrt-24.10 https://github.com/sbwml/luci-theme-argon package/argon
+# git clone --depth=1 -b openwrt-24.10 https://github.com/sbwml/luci-theme-argon package/argon
 git clone --depth=1 https://github.com/eamonxg/luci-theme-aurora package/aurora
 git clone --depth=1 https://github.com/eamonxg/luci-app-aurora-config package/aurora-config
 git clone --depth=1 https://github.com/sirpdboy/luci-theme-kucat package/kucat
