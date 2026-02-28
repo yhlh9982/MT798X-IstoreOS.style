@@ -27,15 +27,19 @@ git clone --depth=1 -b master https://github.com/fw876/helloworld  package/hello
 
 # 功能插件
 git clone --depth=1 https://github.com/gdy666/luci-app-lucky package/lucky
+git clone --depth=1 https://github.com/sbwml/luci-app-openlist2 package/openlist2
+
 git clone --depth=1 https://github.com/sirpdboy/luci-app-watchdog package/watchdog
 git clone --depth=1 https://github.com/sirpdboy/luci-app-taskplan package/taskplan
 git clone --depth=1 https://github.com/iv7777/luci-app-authshield package/authshield
+
 git clone --depth=1 https://github.com/EasyTier/luci-app-easytier package/easytier
 git clone --depth=1 https://github.com/Tokisaki-Galaxy/luci-app-tailscale-community package/tailscale
+
 git clone --depth=1 https://github.com/isalikai/luci-app-owq-wol package/luci-app-owq-wol
 
 # 主题
-# git clone --depth=1 -b openwrt-24.10 https://github.com/sbwml/luci-theme-argon package/argon
+git clone --depth=1 -b openwrt-25.12 https://github.com/sbwml/luci-theme-argon package/argon
 git clone --depth=1 https://github.com/eamonxg/luci-theme-aurora package/aurora
 git clone --depth=1 https://github.com/eamonxg/luci-app-aurora-config package/aurora-config
 git clone --depth=1 https://github.com/sirpdboy/luci-theme-kucat package/kucat
