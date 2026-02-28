@@ -127,6 +127,16 @@ if [ -n "$KSMBD_DIR" ]; then
     echo "✅ KSMBD 菜单已移动"
 fi
 
+# 5.3 OpenList2 -> NAS (自动定位并精准修改)
+OPENLIST2_DIR=$(find feeds package -type d -name "luci-app-openlist2" | head -n 1)
+if [ -n "$OPENLIST2_DIR" ]; then
+    # 修改菜单路径：从 services 变更为 nas
+    find "$OPENLIST2_DIR" -type f -exec sed -i 's|admin/services/openlist2|admin/nas/openlist2|g' {} +
+    # 修改 JSON 父级定义 (如果存在 parent 字段)
+    find "$OPENLIST2_DIR" -type f -exec sed -i 's/"parent": "luci.services"/"parent": "luci.nas"/g' {} +
+    echo "✅ OpenList2 菜单已移动到 NAS"
+fi
+
 echo "=========================================="
 echo "Rust 终极闭环救治脚本 (V13.2 终极版)"
 echo "=========================================="
