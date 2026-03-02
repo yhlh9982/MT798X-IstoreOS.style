@@ -22,7 +22,7 @@ git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall2  packa
 git clone --depth=1 -b dev https://github.com/vernesong/OpenClash  package/OpenClash
 git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki  package/nikki
 git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo  package/momo
-git clone --depth=1 -b master https://github.com/QiuSimons/luci-app-daed  package/daed
+git clone --depth=1 -b kix https://github.com/QiuSimons/luci-app-daed  package/daed
 git clone --depth=1 -b master https://github.com/fw876/helloworld  package/helloworld
 
 # 功能插件
@@ -39,7 +39,6 @@ git clone --depth=1 https://github.com/Tokisaki-Galaxy/luci-app-tailscale-commun
 git clone --depth=1 https://github.com/isalikai/luci-app-owq-wol package/luci-app-owq-wol
 
 # 主题
-
 echo 'src-git aurora https://github.com/eamonxg/luci-theme-aurora.git' >> feeds.conf.default
 echo 'src-git aurora-config https://github.com/eamonxg/luci-app-aurora-config.git' >> feeds.conf.default
 git clone --depth=1 -b openwrt-25.12 https://github.com/sbwml/luci-theme-argon package/argon
