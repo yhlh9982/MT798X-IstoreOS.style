@@ -4,11 +4,11 @@
 # Description: Build OpenWrt using GitHub Actions
 #
 
-name: mt7986-clx-s20i
+name: 24.10-clx-s20i
 
 env:
   # 设备名称，用于生成发布标签
-  DEVICE_NAME: mt7986-clx-s20i
+  DEVICE_NAME: 24.10-clx-s20i
   # 源码仓库地址
   REPO_URL: https://github.com/dailook/immortalwrt-mt798x-6.6
   #REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
