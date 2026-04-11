@@ -19,6 +19,7 @@ env:
   CONFIG_FILE: istore/istore-bt-r320.config
   # 自定义脚本 1 (在更新 feeds 之前运行)
   DIY_P1_SH: istore/diy-part1.sh
+  DIY_P3_SH: 24.10/diy-part3.sh
   # 自定义脚本 2 (在更新 feeds 之后运行)
   DIY_P2_SH: istore/diy-part2.sh
   # 上传 bin 目录 (包含所有 ipk)
@@ -117,13 +118,19 @@ jobs:
         git clone $REPO_URL -b $REPO_BRANCH --single-branch openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    # 4. 加载自定义 Feeds (diy-part1.sh)
+    # 4. 加载自定义 Feeds (diy-part1+3.sh)
     - name: Load custom feeds （加载自定义 Feeds）
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
+    - name: Load custom feeds （加载自定义 Feeds）
+      run: |
+        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+        chmod +x $DIY_P3_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P3_SH        
 
     # 5. 更新并安装 Feeds
     - name: Update feeds （Feeds更新）
