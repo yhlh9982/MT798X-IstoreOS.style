@@ -4,27 +4,24 @@
 # Description: Build OpenWrt using GitHub Actions
 #
 
-name: 24.10-x60-new
+name: istore-bt-r320
 
 env:
   # 设备名称，用于生成发布标签
-  DEVICE_NAME: 24.10-x60-new
+  DEVICE_NAME: istore-bt-r320
   # 源码仓库地址
-  # REPO_URL: https://github.com/dailook/immortalwrt-mt798x-6.6
-  # REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
-  REPO_URL: https://github.com/Yuzhii0718/immortalwrt-mt798x-6.6-padavanonly
+  REPO_URL: https://github.com/809280470/immortalwrt-mt798x-6.6.git
   # 源码分支
   REPO_BRANCH: openwrt-24.10-6.6
   # Feeds 配置文件名
   FEEDS_CONF: feeds.conf.default
   # .config 配置文件名
-  CONFIG_FILE: 24.10/mt7986-x60-new.config
+  CONFIG_FILE: istore/istore-bt-r320.config
   # 自定义脚本 1 (在更新 feeds 之前运行)
-  DIY_P1_SH: 24.10/diy-part1.sh
-  # 自定义脚本 2 (在更新 feeds 之后运行)
+  DIY_P1_SH: istore/diy-part1.sh
   DIY_P3_SH: 24.10/diy-part3.sh
   # 自定义脚本 2 (在更新 feeds 之后运行)
-  DIY_P2_SH: 24.10/diy-part2.sh
+  DIY_P2_SH: istore/diy-part2.sh
   # 上传 bin 目录 (包含所有 ipk)
   UPLOAD_BIN_DIR: true
   # 上传固件目录 (包含 img/bin)
@@ -55,7 +52,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@main
 
-    # 1. 释放编译空间
+    # 1. 释放空间
     - name: Ultimate Disk Space Cleanup & Maximize Swap
       env:
         DEBIAN_FRONTEND: noninteractive
@@ -93,7 +90,7 @@ jobs:
         echo ">>> Final Memory/Swap Status:"
         free -h
         
-   # 2. 初始化编译环境
+    # 2. 初始化编译环境
     - name: Initialization Environment （初始化编译环境）
       env:
         DEBIAN_FRONTEND: noninteractive
@@ -105,11 +102,7 @@ jobs:
         sudo -E apt -yqq clean
         sudo -E timedatectl set-timezone "$TZ"
         
-        # 添加 clang llvm npm 依赖
-        sudo apt -yqq install dos2unix libfuse-dev clang llvm npm
-        # 添加 pnpm 依赖
-        sudo npm install -g pnpm
-        
+        sudo apt -yqq install dos2unix libfuse-dev
         sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh )'
         
         sudo mkdir -p /workdir
@@ -125,26 +118,27 @@ jobs:
         git clone $REPO_URL -b $REPO_BRANCH --single-branch openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    # 4. 更新并安装 Feeds
-    - name: Update feeds （Feeds更新）
-      run: cd openwrt && ./scripts/feeds update -a
-
-    - name: Install feeds （Feeds安装）
-      run: cd openwrt && ./scripts/feeds install -a
-
-    # 5. 加载自定义 Feeds (diy-part1.sh)
+    # 4. 加载自定义 Feeds (diy-part1+3.sh)
     - name: Load custom feeds （加载自定义 Feeds）
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
-    - name: Load custom feeds （加载自定义配置diy-part3）
+    - name: Load custom feeds （加载自定义 Feeds）
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P3_SH
         cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P3_SH
+        $GITHUB_WORKSPACE/$DIY_P3_SH        
+
+    # 5. 更新并安装 Feeds
+    - name: Update feeds （Feeds更新）
+      run: cd openwrt && ./scripts/feeds update -a
+
+    - name: Install feeds （Feeds安装）
+      run: cd openwrt && ./scripts/feeds install -a
+
     # 6. 加载自定义配置 (diy-part2.sh)
     - name: Load custom configuration （加载自定义配置diy-part2）
       run: |

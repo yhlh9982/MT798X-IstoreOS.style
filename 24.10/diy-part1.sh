@@ -71,7 +71,6 @@ UPDATE_PACKAGE "watchdog" "sirpdboy/luci-app-watchdog" "main"  #看门狗
 UPDATE_PACKAGE "netwizard" "sirpdboy/luci-app-netwizard" "main"  #网络设置向导
 UPDATE_PACKAGE "advancedplus" "sirpdboy/luci-app-advancedplus" "main"  #高级设置
 UPDATE_PACKAGE "partexp" "sirpdboy/luci-app-partexp" "main"  #分区助手
-
 UPDATE_PACKAGE "openlist2" "sbwml/luci-app-openlist2" "main"    #alist的新替换openlist
 UPDATE_PACKAGE "qbittorrent" "sbwml/luci-app-qbittorrent" "master" "" "qt6base qt6tools rblibtorrent"  #qbittorrent下载
 
@@ -86,7 +85,7 @@ UPDATE_PACKAGE "fancontrol" "rockjake/luci-app-fancontrol" "main"   #Openwrt简�
 UPDATE_PACKAGE "open-app-filter" "destan19/OpenAppFilter" "master" "" "luci-app-appfilter oaf"  #应用过滤(OAF)
 UPDATE_PACKAGE "lucky" "gdy666/luci-app-lucky" "main"   #lucky 大吉
 UPDATE_PACKAGE "vnt" "lmq8267/luci-app-vnt" "main"
-UPDATE_PACKAGE "qmodem" "FUjr/QModem" "main"
+UPDATE_PACKAGE "qmodem" "FUjr/QModem" "main" 
 
 #更新软件包版本
 UPDATE_VERSION() {
